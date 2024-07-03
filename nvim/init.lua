@@ -9,6 +9,11 @@ if not vim.loop.fs_stat(lazypath) then
   vim.fn.system { "git", "clone", "--filter=blob:none", repo, "--branch=stable", lazypath }
 end
 
+if vim.g.neovide then
+  vim.g.neovide_cursor_vfx_mode = "wireframe"
+  vim.g.neovide_cursor_trail_size = 0.1
+end
+
 vim.opt.rtp:prepend(lazypath)
 
 local lazy_config = require "configs.lazy"
