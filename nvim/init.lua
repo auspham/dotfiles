@@ -12,6 +12,29 @@ end
 if vim.g.neovide then
   vim.g.neovide_cursor_vfx_mode = "wireframe"
   vim.g.neovide_cursor_trail_size = 0.1
+
+  -- change font
+  local map = vim.keymap.set
+
+  local function neovideScale(amount)
+    local temp = vim.g.neovide_scale_factor + amount
+
+    if temp < 0.5 then
+      return
+    end
+
+    vim.g.neovide_scale_factor = temp
+  end
+
+  map("n", "<C-=>", function()
+    neovideScale(0.1)
+    vim.cmd("redraw!")
+  end)
+
+  map("n", "<C-->", function()
+    neovideScale(-0.1)
+    vim.cmd("redraw!")
+  end)
 end
 
 vim.opt.rtp:prepend(lazypath)
