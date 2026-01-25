@@ -1,0 +1,91 @@
+// Zed keymap
+//
+// For information on binding keys, see the Zed
+// documentation: https://zed.dev/docs/key-bindings
+//
+// To see the default key bindings run `zed: open default keymap`
+// from the command palette.
+// [
+//   {
+//     "context": "Workspace",
+//     "bindings": {
+//       // "shift shift": "file_finder::Toggle"
+//     },
+//   },
+//   {
+//     "context": "Editor && vim_mode == insert",
+//     "bindings": {
+//       "j k": "vim::NormalBefore",
+//     },
+//   },
+// ]
+
+[
+  {
+    "context": "Editor",
+    "bindings": {
+      "ctrl-h": ["workspace::ActivatePaneInDirection", "Left"],
+      "ctrl-l": ["workspace::ActivatePaneInDirection", "Right"],
+      "ctrl-k": ["workspace::ActivatePaneInDirection", "Up"],
+      "ctrl-j": ["workspace::ActivatePaneInDirection", "Down"],
+      "ctrl-b": "workspace::ToggleRightDock",
+      "ctrl-shift-b": "workspace::ToggleLeftDock",
+      "alt-s alt-z": "workspace::ToggleZoom",
+    },
+  },
+  {
+    "context": "Editor && vim_mode == normal",
+    "bindings": {
+      "space e": "workspace::ToggleLeftDock",
+      "ctrl-`": "workspace::ToggleBottomDock",
+      "space p": "editor::Format",
+      "space space": "file_finder::Toggle",
+      "space v": "pane::SplitVertical",
+      "space w": "pane::CloseActiveItem",
+      "ctrl-w": "pane::CloseActiveItem",
+      "space h": "pane::SplitHorizontal",
+      "space l": "workspace::ActivatePreviousPane",
+    },
+  },
+  {
+    "context": "Editor && vim_mode == insert",
+    "bindings": {
+      "j k": "vim::NormalBefore",
+      "alt-h": "vim::Left",
+      "alt-l": "vim::Right",
+      "alt-j": "vim::Down",
+      "alt-k": "vim::Up",
+    },
+  },
+  {
+    "context": "Editor && vim_mode == visual",
+    "bindings": {
+      "shift-j": "editor::MoveLineDown",
+      "shift-k": "editor::MoveLineUp",
+    },
+  },
+  {
+    "context": "ProjectPanel",
+    "bindings": {
+      "space e": "workspace::ToggleLeftDock",
+      "ctrl-b": "workspace::ToggleLeftDock",
+    },
+  },
+  {
+    "context": "Terminal",
+    "bindings": {
+      "ctrl-/": "workspace::ToggleBottomDock",
+    },
+  },
+  {
+    "context": "Dock",
+
+    "bindings": {
+      "ctrl-h": ["workspace::ActivatePaneInDirection", "Left"],
+      "ctrl-l": ["workspace::ActivatePaneInDirection", "Right"],
+      "ctrl-k": ["workspace::ActivatePaneInDirection", "Up"],
+      "ctrl-j": ["workspace::ActivatePaneInDirection", "Down"],
+      // ... or other keybindings
+    },
+  },
+]
