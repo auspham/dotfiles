@@ -7,6 +7,15 @@
 // custom settings, run `zed: open default settings` from the
 // command palette (cmd-shift-p / ctrl-shift-p)
 {
+  "tabs": {
+    "file_icons": true
+  },
+  "outline_panel": {
+    "dock": "left"
+  },
+  "agent_servers": {
+
+  },
   "tab_bar": {
     "show": true
   },
@@ -20,8 +29,10 @@
   "agent": {
     "default_profile": "write",
     "default_model": {
+      "effort": "high",
+      "enable_thinking": true,
       "provider": "copilot_chat",
-      "model": "gemini-3-flash-preview"
+      "model": "claude-opus-4.6"
     },
     "dock": "left",
     "favorite_models": [],
@@ -49,16 +60,17 @@
   },
   "show_whitespaces": "trailing",
   "buffer_font_family": "Fira Code",
+  "buffer_line_height": "standard",
   "session": {
     "trust_all_worktrees": true
   },
   "vim_mode": true,
-  "ui_font_size": 18.0,
-  "buffer_font_size": 17.0,
+  "ui_font_size": 15.0,
+  "buffer_font_size": 14.0,
   "theme": {
     "mode": "system",
     "light": "Gruvbox Light",
-    "dark": "Gruvbox Dark Hard",
+    "dark": "Gruvbox Material",
   },
   "languages": {
     "Python": {
