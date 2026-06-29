@@ -1,0 +1,53 @@
+{
+  "logLevel": "all",
+  "allowedUrls": [
+    "https://api.github.com",
+    "https://raw.githubusercontent.com",
+    "https://docs.github.com",
+    "https://pypi.org",
+    "https://github.blog",
+    "https://pkg.go.dev",
+    "https://go.dev"
+  ],
+  "extraKnownMarketplaces": {
+    "karpathy-skills": {
+      "source": {
+        "source": "github",
+        "repo": "forrestchang/andrej-karpathy-skills"
+      }
+    }
+  },
+  "enabledPlugins": {
+    "andrej-karpathy-skills@karpathy-skills": true
+  },
+  "showReasoning": true,
+  "effortLevel": "max",
+  "contextTier": "long_context",
+  "theme": "high-contrast",
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/home/austin/.copilot/hooks/copilot-done.sh"
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/home/austin/.copilot/hooks/copilot-working.sh"
+          }
+        ]
+      }
+    ]
+  },
+  "voice": {
+    "enabled": true,
+    "selectedModel": "nemotron-3.5-asr-streaming-0.6b-generic-cpu:3"
+  }
+}
