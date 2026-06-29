@@ -60,3 +60,12 @@ tmux capture-pane -t "$TARGET" -p -S -200 | tail -80
 **Examples**
 - `run the test suite <build>` → send `pytest ...` to window `build` in the current session, creating it if missing.
 - `tail the log <logs:1>` → send `tail -f ...` to pane 1 of window `logs` in the current session.
+
+## Coding & communication conventions
+
+1. **No em-dashes.** Never use the em-dash character. If a dash is needed, use a regular hyphen-minus (`-`).
+2. **Minimal comments.** Never write banner/separator comments (e.g. `-------`). Add a comment only when genuinely necessary; otherwise let the code speak for itself via good variable names, small functions, and refactoring.
+3. **OOP & abstraction.** Prefer OOP and a good level of abstraction for extensibility (enums, constants files, clear interfaces). Keep code clean and well-structured.
+4. **Quality over speed.** When weighing options, never factor in development time. Optimise for code quality and extensibility.
+5. **Markdown wrapping.** Don't insert hard line breaks mid-sentence. Write full sentences/paragraphs and break like a normal user (soft-wrap).
+6. **Commits.** Never add co-author / co-commit trailers. Always sign off (`git commit -s`) and use Conventional Commits style (e.g. `feat:`, `fix(scope):`).
