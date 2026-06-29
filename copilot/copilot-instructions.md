@@ -65,7 +65,8 @@ tmux capture-pane -t "$TARGET" -p -S -200 | tail -80
 
 1. **No em-dashes.** Never use the em-dash character. If a dash is needed, use a regular hyphen-minus (`-`).
 2. **Minimal comments.** Never write banner/separator comments (e.g. `-------`). Add a comment only when genuinely necessary; otherwise let the code speak for itself via good variable names, small functions, and refactoring.
-3. **OOP & abstraction.** Prefer OOP and a good level of abstraction for extensibility (enums, constants files, clear interfaces). Keep code clean and well-structured.
+3. **Abstraction where it fits.** Use OOP and abstraction (enums, constants files, clear interfaces) where it genuinely fits; prefer pure functions when simpler. Add abstraction when a real second case exists, not for hypothetical futures. Keep code clean and extensible without over-engineering.
 4. **Quality over speed.** When weighing options, never factor in development time. Optimise for code quality and extensibility.
 5. **Markdown wrapping.** Don't insert hard line breaks mid-sentence. Write full sentences/paragraphs and break like a normal user (soft-wrap).
 6. **Commits.** Never add co-author / co-commit trailers. Always sign off (`git commit -s`) and use Conventional Commits style (e.g. `feat:`, `fix(scope):`).
+7. **Typing.** Always include strong type coverage where the language supports it (type hints, generics, avoid untyped `any`). Prefer precise types over loose ones.
