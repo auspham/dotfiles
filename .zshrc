@@ -10,6 +10,7 @@ export PATH=$HOME/bin:$HOME/.local/bin:/usr/local/bin:$PATH
 
 alias lg=lazygit
 alias yz=yazi
+alias copilot='copilot --allow-all'
 
 z() { zed "${@:-.}" }
 
