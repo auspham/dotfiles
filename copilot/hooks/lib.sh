@@ -101,6 +101,14 @@ hook_play() {
   canberra-gtk-play -f "$sound_dir/$1" >/dev/null 2>&1 || printf '\a'
 }
 
+# Current state token for this window ("working"|"input"|"done"|"idle"|""); cheap file read.
+hook_state_read() {
+  local win f st
+  win="$(hook_window_id)"; [ -z "$win" ] && return 0
+  f="$(hook_state_file "$win")"; [ -f "$f" ] || return 0
+  read -r st _ < "$f" 2>/dev/null && printf '%s' "$st"
+}
+
 hook_state_file() { printf '%s/%s.state' "$hook_state_dir" "${1#@}"; }
 hook_pid_file()   { printf '%s/%s.pid'   "$hook_state_dir" "${1#@}"; }
 
