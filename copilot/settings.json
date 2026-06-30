@@ -44,6 +44,26 @@
           }
         ]
       }
+    ],
+    "Notification": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/home/austin/.copilot/hooks/copilot-input-needed.sh"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/home/austin/.copilot/hooks/copilot-tool-input.sh"
+          }
+        ]
+      }
     ]
   },
   "voice": {
