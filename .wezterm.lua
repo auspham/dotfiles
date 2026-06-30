@@ -7,7 +7,7 @@ config.font_size = 12
 config.line_height = 1.0
 config.custom_block_glyphs = false
 
-config.color_scheme = 'Github Dark (Gogh)'
+config.color_scheme = 'Dark+'
 config.window_background_opacity = 0.95
 
 config.window_decorations = 'INTEGRATED_BUTTONS|RESIZE'

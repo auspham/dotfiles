@@ -17,4 +17,4 @@ Hooks (share `hooks/lib.sh`) drive a per-window tmux state machine named after t
 
 ## WezTerm
 `cp .wezterm.lua ~/`
-JetBrainsMono Nerd Font Mono @ 12 (download the Nerd Font above), `Github Dark (Gogh)` color scheme (bundled with WezTerm), 0.95 background opacity, minimal window (title-bar buttons integrated into the tab bar, which hides itself at a single tab), zeroed top/bottom padding so content fills the height, and system + visual bell. WezTerm auto-reloads the config on save.
+JetBrainsMono Nerd Font Mono @ 12 (download the Nerd Font above), `Dark+` color scheme (VSCode's default dark theme, bundled with WezTerm), 0.95 background opacity, minimal window (title-bar buttons integrated into the tab bar, which hides itself at a single tab), zeroed top/bottom padding so content fills the height, and system + visual bell. `custom_block_glyphs` is off so braille (e.g. the tmux copilot spinner) renders from the font on the baseline. WezTerm auto-reloads the config on save.
