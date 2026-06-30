@@ -69,10 +69,23 @@ hook_strip_marker() {
   printf '%s' "$1" | LC_ALL=C sed -E 's/^(\xE2\x9C\x93|\xE2\x9D\x93|\(\?\)|\xE2[\xA0-\xA3][\x80-\xBF]) //'
 }
 
-# Resolve a display name: stdin session_name -> db summary -> current window name -> copilot.
+# Authoritative session title as shown in Copilot (what /rename writes).
+hook_workspace_name() {
+  local sid f n
+  sid="$(hook_field session_id)"; [ -n "$sid" ] || return 1
+  f="$HOME/.copilot/session-state/$sid/workspace.yaml"
+  [ -f "$f" ] || return 1
+  n="$(sed -nE 's/^name:[[:space:]]*(.*)$/\1/p' "$f" | head -1)"
+  n="${n%\"}"; n="${n#\"}"; n="${n%\'}"; n="${n#\'}"
+  [ -n "$n" ] && printf '%s' "$n"
+}
+
+# Resolve a display name: workspace.yaml title -> stdin session_name -> db summary
+# -> current window name -> copilot.
 hook_session_name() {
   local name sid win
-  name="$(hook_field session_name)"
+  name="$(hook_workspace_name)"
+  [ -z "$name" ] && name="$(hook_field session_name)"
   if [ -z "$name" ]; then
     sid="$(hook_field session_id)"
     [ -n "$sid" ] && name="$(sqlite3 "$copilot_db" "select summary from sessions where id='$sid';" 2>/dev/null)"
