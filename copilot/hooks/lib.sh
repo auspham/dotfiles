@@ -24,7 +24,7 @@ hook_window_id() {
 }
 
 hook_strip_marker() {
-  printf '%s' "$1" | sed -E 's/^(\xE2\x9C\x93|\xE2\x9D\x93) //'
+  printf '%s' "$1" | sed -E 's/^(\xE2\x9C\x93|\xE2\x9D\x93|\(\?\)) //'
 }
 
 # Resolve a display name: stdin session_name -> db summary -> current window name -> copilot.

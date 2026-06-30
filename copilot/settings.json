@@ -64,6 +64,16 @@
           }
         ]
       }
+    ],
+    "PostToolUse": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/home/austin/.copilot/hooks/copilot-input-answered.sh"
+          }
+        ]
+      }
     ]
   },
   "voice": {
