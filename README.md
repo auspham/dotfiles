@@ -14,3 +14,7 @@ Hooks (share `hooks/lib.sh`) drive a per-window tmux state machine named after t
 
 ## lazygit
 `mkdir -p ~/.config/lazygit && cp lazygit/config.yml ~/.config/lazygit/config.yml`
+
+## WezTerm
+`cp .wezterm.lua ~/`
+JetBrainsMono Nerd Font Mono @ 12 (download the Nerd Font above), `Github Dark (Gogh)` color scheme (bundled with WezTerm), 0.95 background opacity, minimal window (title-bar buttons integrated into the tab bar, which hides itself at a single tab), zeroed top/bottom padding so content fills the height, and system + visual bell. WezTerm auto-reloads the config on save.
