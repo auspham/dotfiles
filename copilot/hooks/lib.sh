@@ -48,8 +48,15 @@ hook_is_input_tool() {
   return 1
 }
 
+# Running inside a tmux pane? Headless/piped copilot runs have neither var set.
+hook_in_tmux() { [ -n "${TMUX:-}" ] || [ -n "${TMUX_PANE:-}" ]; }
+
 hook_pane() {
-  printf '%s' "${TMUX_PANE:-$(tmux display-message -p '#{pane_id}' 2>/dev/null)}"
+  if [ -n "${TMUX_PANE:-}" ]; then
+    printf '%s' "$TMUX_PANE"
+  elif [ -n "${TMUX:-}" ]; then
+    tmux display-message -p '#{pane_id}' 2>/dev/null
+  fi
 }
 
 hook_window_id() {
