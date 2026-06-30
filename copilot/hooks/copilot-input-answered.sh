@@ -4,6 +4,7 @@
 source "$HOME/.copilot/hooks/lib.sh"
 hook_read_input
 hook_debug
+hook_in_tmux || exit 0
 hook_is_input_tool || exit 0
 hook_start_working "$(hook_session_name)"
 exit 0
