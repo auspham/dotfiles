@@ -58,6 +58,19 @@ hook_is_input_tool() {
   return 1
 }
 
+# True only for a Notification that is a *pending* request the user must answer
+# (permission prompt / MCP elicitation). Everything else a Notification carries -
+# agent_completed (fired once per finished subagent, e.g. by /research), idle, and the
+# *_completed/_response/_denied resolutions - is informational and must not ding or grab
+# the window status.
+hook_notification_is_input() {
+  case "$(hook_field notification_type)" in
+    permission|permission_prompt|permission_request|permission_requested) return 0 ;;
+    elicitation|elicitation_requested|elicitation_dialog) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
 # Running inside a tmux pane? Headless/piped copilot runs have neither var set.
 hook_in_tmux() { [ -n "${TMUX:-}" ] || [ -n "${TMUX_PANE:-}" ]; }
 
@@ -82,7 +95,7 @@ hook_strip_marker() {
 # Authoritative session title as shown in Copilot (what /rename writes).
 hook_workspace_name() {
   local sid f n
-  sid="$(hook_field session_id)"; [ -n "$sid" ] || return 1
+  sid="$(hook_field session_id)"; [ -z "$sid" ] && sid="$(hook_field sessionId)"; [ -n "$sid" ] || return 1
   f="$HOME/.copilot/session-state/$sid/workspace.yaml"
   [ -f "$f" ] || return 1
   n="$(sed -nE 's/^name:[[:space:]]*(.*)$/\1/p' "$f" | head -1)"
@@ -159,6 +172,20 @@ hook_pane_working() {
   footer="$(printf '%s\n' "$body" | grep -vE '^[[:space:]]*$' | tail -1)"
   printf '%s' "$footer" | grep -qE "$hook_idle_footer_re" && return 1
   return 0
+}
+
+# Poll the copilot TUI footer for up to ~0.8s; succeed (0) as soon as it shows the idle
+# prompt, i.e. the *visible* turn truly ended. Returns 1 if still busy - which is the
+# case for a subagent's Stop firing mid-turn (task/research/explore), so callers can
+# ignore those and leave the main working spinner alone.
+hook_wait_idle() {
+  local pane="$1" i
+  [ -n "$pane" ] || return 1
+  for i in 1 2 3 4 5 6 7 8; do
+    hook_pane_working "$pane" || return 0
+    sleep 0.1
+  done
+  return 1
 }
 
 # Stop any spinner, then statically render "<marker> <name>" with <style>.
