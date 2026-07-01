@@ -16,8 +16,18 @@ hook_input_tools="AskUserQuestion exit_plan_mode"
 hook_style_working="bg=blue,fg=white"
 hook_style_input="bg=yellow,fg=black"
 hook_style_done="bg=green,fg=black"
+hook_style_cancel="bg=red,fg=white"
 hook_marker_input="(?)"
 hook_marker_done="✓"
+hook_marker_cancel="✗"
+
+# Copilot fires NO hook when a turn is cancelled by the user (esc) or aborts with
+# an error - it just returns to the idle prompt. The spinner detects the *end* of a
+# turn by positively matching copilot's idle-prompt footer (ready for input). We
+# match the idle footer rather than the absence of "esc cancel" so that any
+# working/thinking/streaming phase keeps the spinner spinning, even if a given phase
+# does not render the cancel affordance.
+hook_idle_footer_re='commands.*\? help|tab next tab|space hold to record'
 
 # Working spinner: space-separated frames + frame delay (~8 fps).
 hook_spinner_frames="⠋ ⠙ ⠹ ⠸ ⠼ ⠴ ⠦ ⠧ ⠇ ⠏"
@@ -138,6 +148,19 @@ hook_set_style() {
   fi
 }
 
+# True while the copilot TUI in <pane> is still busy (working / thinking / streaming
+# / running a tool). Returns false ONLY when the pane's footer positively shows the
+# idle prompt (copilot has returned to "ready for input"). We inspect just the last
+# non-blank line (the status footer) so body text can't trigger a false idle, and if
+# the pane can't be read we assume busy so a live turn is never flipped to cancelled.
+hook_pane_working() {
+  local body footer
+  body="$(tmux capture-pane -p -t "$1" 2>/dev/null)" || return 0
+  footer="$(printf '%s\n' "$body" | grep -vE '^[[:space:]]*$' | tail -1)"
+  printf '%s' "$footer" | grep -qE "$hook_idle_footer_re" && return 1
+  return 0
+}
+
 # Stop any spinner, then statically render "<marker> <name>" with <style>.
 # hook_render_static <state> <marker|""> <style|"-"> <name>
 hook_render_static() {
@@ -151,12 +174,13 @@ hook_render_static() {
 # Enter "working": stop any old spinner, then launch a fresh self-terminating one.
 # hook_start_working <name>
 hook_start_working() {
-  local win gen; win="$(hook_window_id)"; [ -z "$win" ] && return 0
+  local win gen pane; win="$(hook_window_id)"; [ -z "$win" ] && return 0
+  pane="$(hook_pane)"
   hook_state_write "$win" "idle"
   hook_spin_wait_stopped "$win"
   gen="$$$RANDOM$RANDOM"
   hook_state_write "$win" "working" "$gen"
   tmux set-window-option -t "$win" automatic-rename off 2>/dev/null
   hook_set_style "$win" "$hook_style_working"
-  setsid bash "$HOME/.copilot/hooks/copilot-spin.sh" "$win" "${1:-copilot}" "$gen" >/dev/null 2>&1 &
+  setsid bash "$HOME/.copilot/hooks/copilot-spin.sh" "$win" "${1:-copilot}" "$gen" "$pane" >/dev/null 2>&1 &
 }
