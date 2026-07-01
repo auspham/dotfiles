@@ -174,20 +174,6 @@ hook_pane_working() {
   return 0
 }
 
-# Poll the copilot TUI footer for up to ~0.8s; succeed (0) as soon as it shows the idle
-# prompt, i.e. the *visible* turn truly ended. Returns 1 if still busy - which is the
-# case for a subagent's Stop firing mid-turn (task/research/explore), so callers can
-# ignore those and leave the main working spinner alone.
-hook_wait_idle() {
-  local pane="$1" i
-  [ -n "$pane" ] || return 1
-  for i in 1 2 3 4 5 6 7 8; do
-    hook_pane_working "$pane" || return 0
-    sleep 0.1
-  done
-  return 1
-}
-
 # Stop any spinner, then statically render "<marker> <name>" with <style>.
 # hook_render_static <state> <marker|""> <style|"-"> <name>
 hook_render_static() {
