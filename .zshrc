@@ -153,7 +153,7 @@ thcd() {
     line=$(print -r -- "$status_out" | awk -v i="$1" '$1==i {print; exit}')
     [[ -n "$line" ]] || { print -u2 -- "thcd: no worktree with index $1"; return 1 }
   fi
-  wt=${line##* }
+  wt=$(print -r -- "$line" | awk '{print $3}')
   wt=${wt/#\~/$HOME}
   cd -- "$wt"
 }
