@@ -136,3 +136,30 @@ source /usr/share/doc/fzf/examples/completion.zsh
 
 # --- zoxide (smart cd: j <dir>, ji for fuzzy; z stays = zed) ---
 eval "$(zoxide init zsh --cmd j)"
+
+# --- treehouse: cd into a pooled worktree by its `treehouse status` index ---
+# thcd <index>  -> cd into that worktree; thcd (no arg) -> fzf-pick one.
+thcd() {
+  emulate -L zsh
+  local status_out line wt
+  status_out=$(treehouse status 2>&1) || { print -u2 -- "$status_out"; return 1 }
+  if [[ -z "$1" ]]; then
+    if (( $+commands[fzf] )); then
+      line=$(print -r -- "$status_out" | fzf --height 40% --reverse --prompt='treehouse> ') || return
+    else
+      print -r -- "$status_out"; print -u2 -- "usage: thcd <index>"; return 1
+    fi
+  else
+    line=$(print -r -- "$status_out" | awk -v i="$1" '$1==i {print; exit}')
+    [[ -n "$line" ]] || { print -u2 -- "thcd: no worktree with index $1"; return 1 }
+  fi
+  wt=${line##* }
+  wt=${wt/#\~/$HOME}
+  cd -- "$wt"
+}
+_thcd() {
+  local -a idx
+  idx=(${(f)"$(treehouse status 2>/dev/null | awk '$1 ~ /^[0-9]+$/ {print $1\":\"$2}')"})
+  _describe 'worktree' idx
+}
+compdef _thcd thcd
