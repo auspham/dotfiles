@@ -14,6 +14,9 @@ config.window_decorations = 'INTEGRATED_BUTTONS|RESIZE'
 config.hide_tab_bar_if_only_one_tab = true
 config.window_padding = { left = 8, right = 8, top = 0, bottom = 0 }
 
+-- Hold Ctrl to bypass tmux mouse reporting so Ctrl+Click opens links in the browser
+config.bypass_mouse_reporting_modifiers = 'CTRL'
+
 config.audible_bell = 'SystemBeep'
 config.visual_bell = {
   fade_in_function = 'EaseIn',
