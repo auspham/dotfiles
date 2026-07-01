@@ -163,3 +163,6 @@ _thcd() {
   _describe 'worktree' idx
 }
 compdef _thcd thcd
+
+# Render an image inline via sixel (WezTerm + tmux 3.4; Kitty/iTerm2 fail as passthrough is off)
+img() { chafa -f sixels "$@"; }
