@@ -24,7 +24,11 @@ case "$1" in
     esac
     ;;
   capture-pane)
-    printf '%s\n' "${TMUX_CAPTURE_FOOTER:-○ Working · esc interrupt}"
+    if [ -n "${TMUX_CAPTURE_FOOTER_FILE:-}" ]; then
+      cat "$TMUX_CAPTURE_FOOTER_FILE"
+    else
+      printf '%s\n' "${TMUX_CAPTURE_FOOTER:-○ Working · esc interrupt}"
+    fi
     ;;
   rename-window|set-window-option)
     printf 'tmux %s\n' "$*" >> "$TEST_LOG"
@@ -76,6 +80,23 @@ sound_count() {
   grep -c '^sound .*complete\.oga' "$test_log" || true
 }
 
+run_spinner() {
+  local footer="$1" current generation
+  read -r current generation _ < "$runtime_dir/copilot-hooks/0.state"
+  env \
+    HOME="$test_home" \
+    PATH="$test_bin:$PATH" \
+    TEST_LOG="$test_log" \
+    TMUX='test' \
+    TMUX_PANE='%0' \
+    TMUX_CAPTURE_FOOTER="$footer" \
+    XDG_RUNTIME_DIR="$runtime_dir" \
+    hook_cancel_grace_frames=0 \
+    hook_cancel_check_frames=1 \
+    hook_cancel_idle_hits=1 \
+    bash "$test_home/.copilot/hooks/copilot-spin.sh" '@0' 'Implement AI Worker Feature' "$generation" '%0'
+}
+
 assert_equal() {
   local expected="$1" actual="$2" label="$3"
   if [ "$actual" != "$expected" ]; then
@@ -104,14 +125,39 @@ assert_equal working "$(state)" 'first child stop keeps spinner'
 assert_equal 1 "$(agent_count)" 'one child remains active'
 
 run_hook copilot-done.sh "$child_two"
-assert_equal done "$(state)" 'last child stop completes the window'
+assert_equal finishing "$(state)" 'last child waits for background work to settle'
 assert_equal 0 "$(agent_count)" 'all active markers are removed'
+assert_equal 0 "$(sound_count)" 'agent stop does not sound before the pane is idle'
+
+footer_file="$test_root/footer"
+printf '%s\n' '○ Working · esc interrupt' > "$footer_file"
+read -r _ generation _ < "$runtime_dir/copilot-hooks/0.state"
+env \
+  HOME="$test_home" \
+  PATH="$test_bin:$PATH" \
+  TEST_LOG="$test_log" \
+  TMUX='test' \
+  TMUX_PANE='%0' \
+  TMUX_CAPTURE_FOOTER_FILE="$footer_file" \
+  XDG_RUNTIME_DIR="$runtime_dir" \
+  hook_cancel_grace_frames=0 \
+  hook_cancel_check_frames=1 \
+  hook_cancel_idle_hits=1 \
+  bash "$test_home/.copilot/hooks/copilot-spin.sh" '@0' 'Implement AI Worker Feature' "$generation" '%0' &
+spinner_pid=$!
+sleep 0.3
+assert_equal finishing "$(state)" 'background shell keeps the window spinning'
+printf '%s\n' 'commands ? help' > "$footer_file"
+wait "$spinner_pid"
+assert_equal done "$(state)" 'idle pane completes the finishing state'
 assert_equal 1 "$(sound_count)" 'last child produces one completion sound'
 
 run_hook copilot-tool-input.sh '{"session_id":"parent-session","tool_name":"Bash"}'
 assert_equal working "$(state)" 'tool use recovers an autonomous resume'
 assert_equal 1 "$(agent_count)" 'autonomous agent is tracked'
 run_hook copilot-done.sh "$parent"
+assert_equal finishing "$(state)" 'autonomous stop waits for the idle footer'
+run_spinner 'commands ? help'
 assert_equal done "$(state)" 'autonomous resume completes normally'
 assert_equal 2 "$(sound_count)" 'autonomous completion sounds once'
 
@@ -126,9 +172,20 @@ assert_equal 1 "$(agent_count)" 'waiting agent remains tracked'
 run_hook copilot-input-answered.sh '{"session_id":"parent-session","tool_name":"AskUserQuestion"}'
 assert_equal working "$(state)" 'answer resumes the spinner'
 run_hook copilot-done.sh "$parent"
+assert_equal finishing "$(state)" 'answered turn waits for the idle footer'
+run_spinner 'commands ? help'
 assert_equal done "$(state)" 'answered turn completes normally'
 
 run_hook copilot-working.sh "$parent"
+run_spinner 'commands ? help'
+assert_equal cancelled "$(state)" 'watchdog marks an unhooked stop as cancelled'
+assert_equal 0 "$(agent_count)" 'watchdog clears stale active markers'
+run_hook copilot-done.sh "$parent"
+assert_equal cancelled "$(state)" 'late stop preserves the cancelled state'
+assert_equal 3 "$(sound_count)" 'late stop after cancellation is silent'
+
+run_hook copilot-working.sh "$parent"
+run_hook copilot-done.sh "$parent"
 read -r _ generation _ < "$runtime_dir/copilot-hooks/0.state"
 env \
   HOME="$test_home" \
@@ -136,17 +193,13 @@ env \
   TEST_LOG="$test_log" \
   TMUX='test' \
   TMUX_PANE='%0' \
-  TMUX_CAPTURE_FOOTER='commands ? help' \
+  TMUX_CAPTURE_FOOTER='○ Working · esc interrupt' \
   XDG_RUNTIME_DIR="$runtime_dir" \
-  hook_cancel_grace_frames=0 \
-  hook_cancel_check_frames=1 \
-  hook_cancel_idle_hits=1 \
+  hook_cancel_grace_frames=100 \
+  hook_spinner_max_frames=2 \
   bash "$test_home/.copilot/hooks/copilot-spin.sh" '@0' 'Implement AI Worker Feature' "$generation" '%0'
-assert_equal cancelled "$(state)" 'watchdog marks an unhooked stop as cancelled'
-assert_equal 0 "$(agent_count)" 'watchdog clears stale active markers'
-run_hook copilot-done.sh "$parent"
-assert_equal cancelled "$(state)" 'late stop preserves the cancelled state'
-assert_equal 3 "$(sound_count)" 'late stop after cancellation is silent'
+assert_equal cancelled "$(state)" 'orphan guard cancels a finishing spinner'
+assert_equal 3 "$(sound_count)" 'orphan guard is silent'
 
 run_hook copilot-working.sh "$child_one"
 run_hook copilot-working.sh "$child_two"
@@ -155,8 +208,10 @@ first_pid=$!
 run_hook copilot-done.sh "$child_two" &
 second_pid=$!
 wait "$first_pid" "$second_pid"
-assert_equal done "$(state)" 'concurrent final stops complete the window'
+assert_equal finishing "$(state)" 'concurrent final stops enter finishing once'
 assert_equal 0 "$(agent_count)" 'concurrent stops remove all markers'
+run_spinner 'commands ? help'
+assert_equal done "$(state)" 'concurrent final stops complete after idle'
 assert_equal 4 "$(sound_count)" 'concurrent final stops produce one completion sound'
 
 printf 'All Copilot hook lifecycle tests passed.\n'

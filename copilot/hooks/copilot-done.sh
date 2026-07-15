@@ -15,8 +15,7 @@ if hook_agents_active; then
   exit 0
 fi
 case "$state" in
-  done|cancelled) exit 0 ;;
+  done|cancelled|finishing) exit 0 ;;
 esac
-hook_play "$hook_sound_done"
-hook_render_static done "$hook_marker_done" "$hook_style_done" "$(hook_session_name)"
+hook_start_finishing "$(hook_session_name)"
 exit 0

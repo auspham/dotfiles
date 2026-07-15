@@ -134,7 +134,7 @@ hook_play() {
   canberra-gtk-play -f "$sound_dir/$1" >/dev/null 2>&1 || printf '\a'
 }
 
-# Current state token for this window ("working"|"input"|"done"|"idle"|""); cheap file read.
+# Current state token for this window ("working"|"finishing"|"input"|"done"|"idle"|"").
 hook_state_read() {
   local win f st
   win="$(hook_window_id)"; [ -z "$win" ] && return 0
@@ -205,7 +205,7 @@ hook_agents_clear() {
   rmdir -- "$dir" 2>/dev/null || true
 }
 
-# Write "<state> [gen]" for a window (state: working|input|done|idle).
+# Write "<state> [gen]" for a window.
 hook_state_write() {
   mkdir -p "$hook_state_dir" 2>/dev/null
   printf '%s %s\n' "$2" "${3:-}" > "$(hook_state_file "$1")"
@@ -254,16 +254,25 @@ hook_render_static() {
   hook_set_style "$win" "$3"
 }
 
-# Enter "working": stop any old spinner, then launch a fresh self-terminating one.
-# hook_start_working <name>
-hook_start_working() {
-  local win gen pane; win="$(hook_window_id)"; [ -z "$win" ] && return 0
+# Stop any old spinner, then launch a fresh one in the requested active state.
+# hook_start_spinner <working|finishing> <name>
+hook_start_spinner() {
+  local state="$1" name="$2" win gen pane
+  win="$(hook_window_id)"; [ -z "$win" ] && return 0
   pane="$(hook_pane)"
   hook_state_write "$win" "idle"
   hook_spin_wait_stopped "$win"
   gen="$$$RANDOM$RANDOM"
-  hook_state_write "$win" "working" "$gen"
+  hook_state_write "$win" "$state" "$gen"
   tmux set-window-option -t "$win" automatic-rename off 2>/dev/null
   hook_set_style "$win" "$hook_style_working"
-  setsid bash "$HOME/.copilot/hooks/copilot-spin.sh" "$win" "${1:-copilot}" "$gen" "$pane" 8>&- >/dev/null 2>&1 &
+  setsid bash "$HOME/.copilot/hooks/copilot-spin.sh" "$win" "${name:-copilot}" "$gen" "$pane" 8>&- >/dev/null 2>&1 &
+}
+
+hook_start_working() {
+  hook_start_spinner working "$1"
+}
+
+hook_start_finishing() {
+  hook_start_spinner finishing "$1"
 }

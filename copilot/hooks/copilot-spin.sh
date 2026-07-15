@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Self-terminating per-window "working" spinner, launched detached by hook_start_working.
-# Renders braille frames into the window name until the per-window state file leaves
-# "working" (or its generation token is superseded, or the window disappears).
+# Self-terminating per-window spinner for working and finishing states.
+# "finishing" keeps the window active after agentStop until Copilot's TUI reports idle,
+# which includes background shell commands that outlive the model turn.
 #
 # It also acts as a cancel/error watchdog: copilot fires no hook when a turn is
 # cancelled by the user (esc) or aborts with an error, so when the copilot TUI stops
@@ -25,11 +25,15 @@ need_idle="${hook_cancel_idle_hits:-2}"       # consecutive idle probes to confi
 
 read -ra frames <<< "$hook_spinner_frames"; n=${#frames[@]}
 exec 9<> <(:) 2>/dev/null            # never-ready fd: sub-second wait without spawning sleep
-i=0; max=20000                       # safety cap (~40 min) against orphans
+i=0
+max="${hook_spinner_max_frames:-720000}"  # ~24h at the default frame delay
 idle_hits=0
 while [ "$i" -lt "$max" ]; do
   read -r st g _ < "$statef" 2>/dev/null || break
-  { [ "$st" = working ] && [ "$g" = "$gen" ]; } || break
+  case "$st" in
+    working|finishing) [ "$g" = "$gen" ] || break ;;
+    *) break ;;
+  esac
   tmux rename-window -t "$win" "${frames[i % n]} $name" 2>/dev/null || break
 
   if [ -n "$pane" ] && [ "$i" -ge "$grace" ] && [ $(( i % check_every )) -eq 0 ]; then
@@ -41,11 +45,21 @@ while [ "$i" -lt "$max" ]; do
         if hook_lock_window_id "$win"; then
           # Re-read state: a terminal hook or newer spinner may have won meanwhile.
           read -r st2 g2 _ < "$statef" 2>/dev/null
-          if [ "$st2" = working ] && [ "$g2" = "$gen" ]; then
-            hook_agents_clear "$win"
-            hook_state_write "$win" cancelled
-            hook_rename "$win" "$hook_marker_cancel $name"
-            hook_set_style "$win" "$hook_style_cancel"
+          if [ "$g2" = "$gen" ]; then
+            case "$st2" in
+              working)
+                hook_agents_clear "$win"
+                hook_state_write "$win" cancelled
+                hook_rename "$win" "$hook_marker_cancel $name"
+                hook_set_style "$win" "$hook_style_cancel"
+                ;;
+              finishing)
+                hook_state_write "$win" done
+                hook_rename "$win" "$hook_marker_done $name"
+                hook_set_style "$win" "$hook_style_done"
+                hook_play "$hook_sound_done"
+                ;;
+            esac
           fi
           hook_unlock_window
         fi
@@ -57,5 +71,21 @@ while [ "$i" -lt "$max" ]; do
   i=$(( i + 1 ))
   read -t "$hook_spinner_delay" -u 9 _ 2>/dev/null || true
 done
+
+if [ "$i" -ge "$max" ] && hook_lock_window_id "$win"; then
+  read -r st2 g2 _ < "$statef" 2>/dev/null
+  if [ "$g2" = "$gen" ]; then
+    case "$st2" in
+      working|finishing)
+        hook_agents_clear "$win"
+        hook_state_write "$win" cancelled
+        hook_rename "$win" "$hook_marker_cancel $name"
+        hook_set_style "$win" "$hook_style_cancel"
+        ;;
+    esac
+  fi
+  hook_unlock_window
+fi
+
 rm -f "$pidf" 2>/dev/null
 exit 0
