@@ -38,12 +38,16 @@ while [ "$i" -lt "$max" ]; do
     else
       idle_hits=$(( idle_hits + 1 ))
       if [ "$idle_hits" -ge "$need_idle" ]; then
-        # Re-read state: a terminal hook (done/input) may have fired meanwhile.
-        read -r st2 _ < "$statef" 2>/dev/null
-        if [ "$st2" = working ]; then
-          hook_state_write "$win" cancelled
-          hook_rename "$win" "$hook_marker_cancel $name"
-          hook_set_style "$win" "$hook_style_cancel"
+        if hook_lock_window_id "$win"; then
+          # Re-read state: a terminal hook or newer spinner may have won meanwhile.
+          read -r st2 g2 _ < "$statef" 2>/dev/null
+          if [ "$st2" = working ] && [ "$g2" = "$gen" ]; then
+            hook_agents_clear "$win"
+            hook_state_write "$win" cancelled
+            hook_rename "$win" "$hook_marker_cancel $name"
+            hook_set_style "$win" "$hook_style_cancel"
+          fi
+          hook_unlock_window
         fi
         break
       fi
