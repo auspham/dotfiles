@@ -33,7 +33,7 @@ hook_idle_footer_re='commands.*\? help|tab next tab|space hold to record'
 hook_spinner_frames="⠋ ⠙ ⠹ ⠸ ⠼ ⠴ ⠦ ⠧ ⠇ ⠏"
 hook_spinner_delay="0.12"
 
-# Per-window hook state (state + pid files), keyed by tmux window id.
+# Per-window hook state, spinner pid, lock, and active-agent markers.
 hook_state_dir="${XDG_RUNTIME_DIR:-/tmp}/copilot-hooks"
 
 hook_read_input() {
@@ -48,6 +48,16 @@ hook_debug() {
 
 hook_field() {
   printf '%s' "$HOOK_INPUT" | jq -r --arg k "$1" '.[$k] // empty' 2>/dev/null
+}
+
+hook_session_id() {
+  local sid
+  sid="$(hook_field session_id)"
+  [ -z "$sid" ] && sid="$(hook_field sessionId)"
+  case "$sid" in
+    ""|*[!A-Za-z0-9_.-]*) return 1 ;;
+  esac
+  printf '%s' "$sid"
 }
 
 # True when the current tool_name is one of $hook_input_tools.
@@ -134,6 +144,66 @@ hook_state_read() {
 
 hook_state_file() { printf '%s/%s.state' "$hook_state_dir" "${1#@}"; }
 hook_pid_file()   { printf '%s/%s.pid'   "$hook_state_dir" "${1#@}"; }
+hook_lock_file()  { printf '%s/%s.lock'  "$hook_state_dir" "${1#@}"; }
+hook_agents_dir() { printf '%s/%s.agents' "$hook_state_dir" "${1#@}"; }
+
+hook_lock_window_id() {
+  local win="$1"
+  [ -n "$win" ] || return 1
+  mkdir -p "$hook_state_dir" 2>/dev/null || return 1
+  exec 8>"$(hook_lock_file "$win")" || return 1
+  if command -v flock >/dev/null 2>&1; then
+    flock -x 8 || return 1
+  fi
+}
+
+hook_lock_window() {
+  local win
+  win="$(hook_window_id)"
+  hook_lock_window_id "$win"
+}
+
+hook_unlock_window() {
+  command -v flock >/dev/null 2>&1 && flock -u 8 2>/dev/null
+  exec 8>&-
+}
+
+hook_agent_mark_active() {
+  local win sid dir
+  win="$(hook_window_id)"; [ -n "$win" ] || return 0
+  sid="$(hook_session_id)" || return 0
+  dir="$(hook_agents_dir "$win")"
+  mkdir -p "$dir" 2>/dev/null || return 0
+  : > "$dir/$sid"
+}
+
+hook_agent_mark_inactive() {
+  local win sid dir
+  win="$(hook_window_id)"; [ -n "$win" ] || return 0
+  sid="$(hook_session_id)" || return 0
+  dir="$(hook_agents_dir "$win")"
+  rm -f -- "$dir/$sid"
+  rmdir -- "$dir" 2>/dev/null || true
+}
+
+hook_agents_active() {
+  local win dir marker
+  win="${1:-$(hook_window_id)}"; [ -n "$win" ] || return 1
+  dir="$(hook_agents_dir "$win")"
+  for marker in "$dir"/*; do
+    [ -f "$marker" ] && return 0
+  done
+  return 1
+}
+
+hook_agents_clear() {
+  local dir marker
+  dir="$(hook_agents_dir "$1")"
+  for marker in "$dir"/*; do
+    [ -f "$marker" ] && rm -f -- "$marker"
+  done
+  rmdir -- "$dir" 2>/dev/null || true
+}
 
 # Write "<state> [gen]" for a window (state: working|input|done|idle).
 hook_state_write() {
@@ -195,5 +265,5 @@ hook_start_working() {
   hook_state_write "$win" "working" "$gen"
   tmux set-window-option -t "$win" automatic-rename off 2>/dev/null
   hook_set_style "$win" "$hook_style_working"
-  setsid bash "$HOME/.copilot/hooks/copilot-spin.sh" "$win" "${1:-copilot}" "$gen" "$pane" >/dev/null 2>&1 &
+  setsid bash "$HOME/.copilot/hooks/copilot-spin.sh" "$win" "${1:-copilot}" "$gen" "$pane" 8>&- >/dev/null 2>&1 &
 }
