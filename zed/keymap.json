@@ -29,6 +29,13 @@
     "context": "Editor && vim_mode == normal",
     "bindings": {
       "ctrl-`": "workspace::ToggleBottomDock",
+      "g r r": "editor::FindAllReferences",
+      "g r i": "editor::GoToImplementation",
+      "g r d": "editor::GoToDefinition",
+      "g r t": "editor::GoToTypeDefinition",
+      "g r shift-d": "editor::GoToDeclaration",
+      "g r n": "editor::Rename",
+      "g r a": "editor::ToggleCodeActions",
       "space p": "editor::Format",
       "space space": "file_finder::Toggle",
       "space v": "pane::SplitVertical",
