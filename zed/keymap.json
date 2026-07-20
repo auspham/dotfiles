@@ -22,7 +22,8 @@
       "ctrl-a": "editor::SelectAll",
       "ctrl-s": "workspace::Save",
       "ctrl-alt-l": "editor::ToggleLineNumbers",
-      "ctrl-k ctrl-w": "pane::CloseAllItems"
+      "ctrl-k ctrl-w": "pane::CloseAllItems",
+      "ctrl-alt-f": "text_finder::Toggle"
     },
   },
   {
@@ -104,6 +105,7 @@
     "context": "Workspace && !Editor && !Terminal",
     "bindings": {
       "space s g": "text_finder::Toggle",
+      "ctrl-alt-f": "text_finder::Toggle",
     },
   },
   {
