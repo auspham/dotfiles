@@ -22,14 +22,14 @@
       "ctrl-a": "editor::SelectAll",
       "ctrl-s": "workspace::Save",
       "ctrl-alt-l": "editor::ToggleLineNumbers",
-      "ctrl-k ctrl-w": "pane::CloseAllItems",
-      "ctrl-alt-f": "text_finder::Toggle"
+      "ctrl-k ctrl-w": "pane::CloseAllItems"
     },
   },
   {
     "context": "Editor && vim_mode == normal",
     "bindings": {
       "ctrl-`": "workspace::ToggleBottomDock",
+      "space s g": "text_finder::Toggle",
       "g r r": "editor::FindAllReferences",
       "g r i": "editor::GoToImplementation",
       "g r d": "editor::GoToDefinition",
