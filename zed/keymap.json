@@ -42,7 +42,6 @@
       "space space": "file_finder::Toggle",
       "space v": "pane::SplitVertical",
       "space w": "pane::CloseActiveItem",
-      "ctrl-w": "pane::CloseActiveItem",
       "space h": "pane::SplitHorizontal",
       "space l": "workspace::ActivatePreviousPane",
       "space e": "project_panel::ToggleFocus",
