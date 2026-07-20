@@ -147,9 +147,11 @@ env \
 spinner_pid=$!
 sleep 0.3
 assert_equal finishing "$(state)" 'background shell keeps the window spinning'
-printf '%s\n' 'commands ? help' > "$footer_file"
+printf '%s\n' \
+  '← sidebar · / commands · ? help · → next tab · ctrl+y view/edit plan · space hold to record' \
+  'GPT-5.6 Sol · 1.1M context' > "$footer_file"
 wait "$spinner_pid"
-assert_equal done "$(state)" 'idle pane completes the finishing state'
+assert_equal done "$(state)" 'two-line idle footer completes the finishing state'
 assert_equal 1 "$(sound_count)" 'last child produces one completion sound'
 
 run_hook copilot-tool-input.sh '{"session_id":"parent-session","tool_name":"Bash"}'

@@ -233,13 +233,14 @@ hook_set_style() {
 
 # True while the copilot TUI in <pane> is still busy (working / thinking / streaming
 # / running a tool). Returns false ONLY when the pane's footer positively shows the
-# idle prompt (copilot has returned to "ready for input"). We inspect just the last
-# non-blank line (the status footer) so body text can't trigger a false idle, and if
-# the pane can't be read we assume busy so a live turn is never flipped to cancelled.
+# idle prompt (copilot has returned to "ready for input"). We inspect just the final
+# two non-blank lines because the status footer includes a model/context line, while
+# still excluding body text that could trigger a false idle. If the pane can't be read,
+# we assume busy so a live turn is never flipped to cancelled.
 hook_pane_working() {
   local body footer
   body="$(tmux capture-pane -p -t "$1" 2>/dev/null)" || return 0
-  footer="$(printf '%s\n' "$body" | grep -vE '^[[:space:]]*$' | tail -1)"
+  footer="$(printf '%s\n' "$body" | grep -vE '^[[:space:]]*$' | tail -2)"
   printf '%s' "$footer" | grep -qE "$hook_idle_footer_re" && return 1
   return 0
 }
