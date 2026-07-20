@@ -101,6 +101,12 @@
     },
   },
   {
+    "context": "Workspace && !Editor && !Terminal",
+    "bindings": {
+      "space s g": "text_finder::Toggle",
+    },
+  },
+  {
     "context": "TabSwitcher",
     "bindings": {
       "ctrl-k": "menu::SelectPrevious",
