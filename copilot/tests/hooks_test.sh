@@ -80,6 +80,10 @@ sound_count() {
   grep -c '^sound .*complete\.oga' "$test_log" || true
 }
 
+non_completion_sound_count() {
+  awk '/^sound / && $0 !~ /complete\.oga/ { count++ } END { print count + 0 }' "$test_log"
+}
+
 run_spinner() {
   local footer="$1" current generation
   read -r current generation _ < "$runtime_dir/copilot-hooks/0.state"
@@ -168,9 +172,17 @@ assert_equal done "$(state)" 'late tool event does not resurrect an idle window'
 assert_equal 0 "$(agent_count)" 'late tool event does not recreate an active marker'
 
 run_hook copilot-working.sh "$parent"
+run_hook copilot-input-needed.sh \
+  '{"session_id":"parent-session","notification_type":"permission"}'
+assert_equal input "$(state)" 'permission prompt pauses the spinner'
+assert_equal 0 "$(non_completion_sound_count)" 'permission prompt stays silent'
+run_hook copilot-tool-input.sh '{"session_id":"parent-session","tool_name":"Bash"}'
+assert_equal working "$(state)" 'auto-approved permission resumes the spinner'
+
 run_hook copilot-tool-input.sh '{"session_id":"parent-session","tool_name":"AskUserQuestion"}'
 assert_equal input "$(state)" 'input tool pauses the spinner'
 assert_equal 1 "$(agent_count)" 'waiting agent remains tracked'
+assert_equal 0 "$(non_completion_sound_count)" 'input tool stays silent'
 run_hook copilot-input-answered.sh '{"session_id":"parent-session","tool_name":"AskUserQuestion"}'
 assert_equal working "$(state)" 'answer resumes the spinner'
 run_hook copilot-done.sh "$parent"

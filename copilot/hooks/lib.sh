@@ -5,9 +5,8 @@
 copilot_db="$HOME/.copilot/session-store.db"
 sound_dir="/usr/share/sounds/freedesktop/stereo"
 
-# Sounds (freedesktop .oga names under $sound_dir).
-hook_sound_input="bell.oga"                # input needed: ask_user / plan review
-hook_sound_done="complete.oga"             # turn complete
+# Completion sound (freedesktop .oga name under $sound_dir).
+hook_sound_done="complete.oga"
 
 # Tools that mean "agent is waiting on the user" (names as seen in hook payloads).
 hook_input_tools="AskUserQuestion exit_plan_mode"
