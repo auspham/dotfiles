@@ -45,6 +45,20 @@
       "space h": "pane::SplitHorizontal",
       "space l": "workspace::ActivatePreviousPane",
       "space e": "project_panel::ToggleFocus",
+      "space g g": [
+        "task::Spawn",
+        {
+          "task_name": "start lazygit",
+          "reveal_target": "center"
+        }
+      ],
+      "space g f": [
+        "task::Spawn",
+        {
+          "task_name": "start lazygit file log",
+          "reveal_target": "center"
+        }
+      ],
     },
   },
   {
@@ -118,6 +132,8 @@
   {
     "context": "Pane",
     "bindings": {
+      "alt-w": "pane::CloseActiveItem",
+      "ctrl-w": null,
       "ctrl-shift-t": [
         "pane::CloseOtherItems",
         {
