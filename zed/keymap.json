@@ -28,6 +28,12 @@
     },
   },
   {
+    "context": "Editor && mode == full",
+    "bindings": {
+      "ctrl-alt-f": "project_search::ToggleFocus",
+    },
+  },
+  {
     "context": "Editor && vim_mode == normal",
     "bindings": {
       "ctrl-`": "workspace::ToggleBottomDock",
