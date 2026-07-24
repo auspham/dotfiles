@@ -23,14 +23,14 @@
       "ctrl-s": "workspace::Save",
       "ctrl-alt-l": "editor::ToggleLineNumbers",
       "ctrl-k ctrl-w": "pane::CloseAllItems",
-      "ctrl-alt-f": "project_search::ToggleFocus",
+      "ctrl-alt-f": "pane::DeploySearch",
       "ctrl-shift-f": "text_finder::Toggle"
     },
   },
   {
     "context": "Editor && mode == full",
     "bindings": {
-      "ctrl-alt-f": "project_search::ToggleFocus",
+      "ctrl-alt-f": "pane::DeploySearch",
     },
   },
   {
@@ -125,7 +125,7 @@
     "context": "Workspace && !Editor && !Terminal",
     "bindings": {
       "space s g": "text_finder::Toggle",
-      "ctrl-alt-f": "project_search::ToggleFocus",
+      "ctrl-alt-f": "pane::DeploySearch",
       "ctrl-shift-f": "text_finder::Toggle",
     },
   },
