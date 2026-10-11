@@ -12,7 +12,7 @@ alias lg=lazygit
 alias yz=yazi
 alias copilot='copilot --allow-all'
 
-z() { zed "${@:-.}" }
+z() { zed-nightly "${@:-.}" }
 
 
 # Path to your Oh My Zsh installation.
@@ -134,7 +134,7 @@ alias vpnfix='/home/austin/.agents/skills/azure-vpn-cert-fix/scripts/restore-roo
 source /usr/share/doc/fzf/examples/key-bindings.zsh
 source /usr/share/doc/fzf/examples/completion.zsh
 
-# --- zoxide (smart cd: j <dir>, ji for fuzzy; z stays = zed) ---
+# --- zoxide (smart cd: j <dir>, ji for fuzzy; z stays = zed-nightly) ---
 eval "$(zoxide init zsh --cmd j)"
 
 # --- treehouse: cd into a pooled worktree by its `treehouse status` index ---
