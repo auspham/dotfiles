@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
-# Shared helpers for Copilot CLI tmux/sound hooks.
+# Shared helpers for Copilot CLI / Claude Code tmux/sound hooks.
 # Source this, then call hook_read_input once and use the helpers below.
+
+# Which agent TUI fired the hook: "copilot" (default) or "claude" (set HOOK_AGENT=claude
+# in the Claude Code hook commands). Picks the default window name and the footer probe.
+hook_agent="${HOOK_AGENT:-copilot}"
 
 copilot_db="$HOME/.copilot/session-store.db"
 sound_dir="/usr/share/sounds/freedesktop/stereo"
@@ -10,7 +14,7 @@ hook_sound_input="bell.oga"
 hook_sound_done="complete.oga"
 
 # Tools that mean "agent is waiting on the user" (names as seen in hook payloads).
-hook_input_tools="AskUserQuestion exit_plan_mode"
+hook_input_tools="AskUserQuestion exit_plan_mode ExitPlanMode"
 
 # Window-status styles per state (tmux style strings) and static markers.
 hook_style_working="bg=blue,fg=white"
@@ -28,6 +32,9 @@ hook_marker_cancel="✗"
 # working/thinking/streaming phase keeps the spinner spinning, even if a given phase
 # does not render the cancel affordance.
 hook_idle_footer_re='commands.*\? help|tab next tab|space hold to record'
+# Claude Code is the reverse: its footer shows "esc to interrupt" for the whole turn
+# (thinking, streaming, running tools) and drops it once back at the prompt.
+hook_claude_busy_re='esc to interrupt'
 
 # Working spinner: space-separated frames + frame delay (~8 fps).
 hook_spinner_frames="⠋ ⠙ ⠹ ⠸ ⠼ ⠴ ⠦ ⠧ ⠇ ⠏"
@@ -99,7 +106,7 @@ hook_window_id() {
 }
 
 hook_strip_marker() {
-  printf '%s' "$1" | LC_ALL=C sed -E 's/^(\xE2\x9C\x93|\xE2\x9D\x93|\(\?\)|\xE2[\xA0-\xA3][\x80-\xBF]) //'
+  printf '%s' "$1" | LC_ALL=C sed -E 's/^(\xE2\x9C[\x93\x97]|\xE2\x9D\x93|\(\?\)|\xE2[\xA0-\xA3][\x80-\xBF]) //'
 }
 
 # Authoritative session title as shown in Copilot (what /rename writes).
@@ -127,7 +134,7 @@ hook_session_name() {
     win="$(hook_window_id)"
     [ -n "$win" ] && name="$(hook_strip_marker "$(tmux display-message -p -t "$win" '#{window_name}' 2>/dev/null)")"
   fi
-  printf '%s' "${name:-copilot}"
+  printf '%s' "${name:-$hook_agent}"
 }
 
 hook_play() {
@@ -241,6 +248,10 @@ hook_pane_working() {
   local body footer
   body="$(tmux capture-pane -p -t "$1" 2>/dev/null)" || return 0
   footer="$(printf '%s\n' "$body" | grep -vE '^[[:space:]]*$' | tail -4 | tr '\n' ' ')"
+  if [ "$hook_agent" = claude ]; then
+    printf '%s' "$footer" | grep -qE "$hook_claude_busy_re"
+    return
+  fi
   printf '%s' "$footer" | grep -qE "$hook_idle_footer_re" && return 1
   return 0
 }
@@ -251,7 +262,7 @@ hook_render_static() {
   local win; win="$(hook_window_id)"; [ -z "$win" ] && return 0
   hook_state_write "$win" "$1"
   hook_spin_wait_stopped "$win"
-  hook_rename "$win" "${2:+$2 }${4:-copilot}"
+  hook_rename "$win" "${2:+$2 }${4:-$hook_agent}"
   hook_set_style "$win" "$3"
 }
 
@@ -267,7 +278,7 @@ hook_start_spinner() {
   hook_state_write "$win" "$state" "$gen"
   tmux set-window-option -t "$win" automatic-rename off 2>/dev/null
   hook_set_style "$win" "$hook_style_working"
-  setsid bash "$HOME/.copilot/hooks/copilot-spin.sh" "$win" "${name:-copilot}" "$gen" "$pane" 8>&- >/dev/null 2>&1 &
+  setsid bash "$HOME/.copilot/hooks/copilot-spin.sh" "$win" "${name:-$hook_agent}" "$gen" "$pane" 8>&- >/dev/null 2>&1 &
 }
 
 hook_start_working() {

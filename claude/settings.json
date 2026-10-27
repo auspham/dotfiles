@@ -1,0 +1,20 @@
+{
+  "theme": "dark",
+  "hooks": {
+    "UserPromptSubmit": [
+      { "hooks": [ { "type": "command", "command": "HOOK_AGENT=claude $HOME/.copilot/hooks/copilot-working.sh" } ] }
+    ],
+    "PreToolUse": [
+      { "matcher": "*", "hooks": [ { "type": "command", "command": "HOOK_AGENT=claude $HOME/.copilot/hooks/copilot-tool-input.sh" } ] }
+    ],
+    "PostToolUse": [
+      { "matcher": "*", "hooks": [ { "type": "command", "command": "HOOK_AGENT=claude $HOME/.copilot/hooks/copilot-input-answered.sh" } ] }
+    ],
+    "Notification": [
+      { "hooks": [ { "type": "command", "command": "HOOK_AGENT=claude $HOME/.copilot/hooks/copilot-input-needed.sh" } ] }
+    ],
+    "Stop": [
+      { "hooks": [ { "type": "command", "command": "HOOK_AGENT=claude $HOME/.copilot/hooks/copilot-done.sh" } ] }
+    ]
+  }
+}

@@ -9,7 +9,7 @@
 # abnormally and we flip the window to the red cancelled marker instead of spinning
 # forever.
 source "$HOME/.copilot/hooks/lib.sh"
-win="$1"; name="${2:-copilot}"; gen="$3"; pane="${4:-}"
+win="$1"; name="${2:-${HOOK_AGENT:-copilot}}"; gen="$3"; pane="${4:-}"
 [ -n "$win" ] || exit 0
 mkdir -p "$hook_state_dir" 2>/dev/null
 pidf="$(hook_pid_file "$win")"; statef="$(hook_state_file "$win")"
