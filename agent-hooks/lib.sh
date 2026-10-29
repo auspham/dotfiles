@@ -32,25 +32,29 @@ hook_marker_cancel="✗"
 # working/thinking/streaming phase keeps the spinner spinning, even if a given phase
 # does not render the cancel affordance.
 hook_idle_footer_re='commands.*\? help|tab next tab|space hold to record'
-# Claude Code is the reverse: its footer shows "esc to interrupt" for the whole turn
-# (thinking, streaming, running tools) and drops it once back at the prompt.
-hook_claude_busy_re='esc to interrupt'
+# Claude Code is the reverse: for the whole turn (thinking, streaming, running tools)
+# it shows a live activity line above the input box, e.g. "✶ Creating… (13s · ↓ 892
+# tokens)", which becomes a past-tense summary ("✻ Churned for 8s") once back at the
+# prompt. Older versions showed "esc to interrupt" instead.
+hook_claude_busy_re='(…|\.\.\.) \([0-9]|esc to interrupt'
+# Non-blank lines above Claude's input box to search, enough to skip a task list.
+hook_claude_busy_lines=12
 
 # Working spinner: space-separated frames + frame delay (~8 fps).
 hook_spinner_frames="⠋ ⠙ ⠹ ⠸ ⠼ ⠴ ⠦ ⠧ ⠇ ⠏"
 hook_spinner_delay="0.12"
 
 # Per-window hook state, spinner pid, lock, and active-agent markers.
-hook_state_dir="${XDG_RUNTIME_DIR:-/tmp}/copilot-hooks"
+hook_state_dir="${XDG_RUNTIME_DIR:-/tmp}/agent-hooks"
 
 hook_read_input() {
   HOOK_INPUT="$(cat 2>/dev/null)"
 }
 
-# Append the raw hook payload to debug.log when ~/.copilot/hooks/.debug exists.
+# Append the raw hook payload to debug.log when ~/.config/agent-hooks/.debug exists.
 hook_debug() {
-  [ -e "$HOME/.copilot/hooks/.debug" ] || return 0
-  printf '%s | %s\n' "$(date '+%F %T')" "$HOOK_INPUT" >> "$HOME/.copilot/hooks/debug.log"
+  [ -e "$HOME/.config/agent-hooks/.debug" ] || return 0
+  printf '%s | %s\n' "$(date '+%F %T')" "$HOOK_INPUT" >> "$HOME/.config/agent-hooks/debug.log"
 }
 
 hook_field() {
@@ -120,11 +124,23 @@ hook_workspace_name() {
   [ -n "$n" ] && printf '%s' "$n"
 }
 
-# Resolve a display name: workspace.yaml title -> stdin session_name -> db summary
-# -> current window name -> copilot.
+# Claude Code conversation title from its transcript (default: the payload's
+# transcript_path). A /rename title wins over the auto-generated one.
+hook_claude_title() {
+  local f="${1:-$(hook_field transcript_path)}"
+  [ -f "$f" ] || return 1
+  grep -E '"type":"(custom|ai)-title"' "$f" 2>/dev/null | jq -rs '
+    (map(select(.type == "custom-title")) | last | .customTitle)
+    // (map(select(.type == "ai-title")) | last | .aiTitle)
+    // empty' 2>/dev/null
+}
+
+# Resolve a display name: workspace.yaml title -> Claude transcript title -> stdin
+# session_name -> db summary -> current window name -> agent.
 hook_session_name() {
   local name sid win
   name="$(hook_workspace_name)"
+  [ -z "$name" ] && [ "$hook_agent" = claude ] && name="$(hook_claude_title)"
   [ -z "$name" ] && name="$(hook_field session_name)"
   if [ -z "$name" ]; then
     sid="$(hook_field session_id)"
@@ -245,13 +261,17 @@ hook_set_style() {
 # model/context line. This still excludes body text behind the input box. If the pane
 # can't be read, we assume busy so a live turn is never flipped to cancelled.
 hook_pane_working() {
-  local body footer
+  local body footer above
   body="$(tmux capture-pane -p -t "$1" 2>/dev/null)" || return 0
-  footer="$(printf '%s\n' "$body" | grep -vE '^[[:space:]]*$' | tail -4 | tr '\n' ' ')"
   if [ "$hook_agent" = claude ]; then
-    printf '%s' "$footer" | grep -qE "$hook_claude_busy_re"
+    above="$(printf '%s\n' "$body" | grep -vE '^[[:space:]]*$' | awk -v max="$hook_claude_busy_lines" '
+      /^[[:space:]]*❯/ { prompt = NR }
+      { line[NR] = $0 }
+      END { if (!prompt) exit 1; for (i = prompt - 1; i > 0 && prompt - i <= max; i--) print line[i] }')" || return 0
+    printf '%s' "$above" | grep -qE "$hook_claude_busy_re"
     return
   fi
+  footer="$(printf '%s\n' "$body" | grep -vE '^[[:space:]]*$' | tail -4 | tr '\n' ' ')"
   printf '%s' "$footer" | grep -qE "$hook_idle_footer_re" && return 1
   return 0
 }
@@ -278,7 +298,7 @@ hook_start_spinner() {
   hook_state_write "$win" "$state" "$gen"
   tmux set-window-option -t "$win" automatic-rename off 2>/dev/null
   hook_set_style "$win" "$hook_style_working"
-  setsid bash "$HOME/.copilot/hooks/copilot-spin.sh" "$win" "${name:-$hook_agent}" "$gen" "$pane" 8>&- >/dev/null 2>&1 &
+  setsid bash "$HOME/.config/agent-hooks/spin.sh" "$win" "${name:-$hook_agent}" "$gen" "$pane" "$(hook_field transcript_path)" 8>&- >/dev/null 2>&1 &
 }
 
 hook_start_working() {

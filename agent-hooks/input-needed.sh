@@ -4,7 +4,7 @@
 # (agent_completed fired once per finished subagent by /research, idle, and the
 # *_completed/_response resolutions) must not ding or steal the spinner; if we were
 # showing "input" and the wait has since resolved, resume the working spinner.
-source "$HOME/.copilot/hooks/lib.sh"
+source "$HOME/.config/agent-hooks/lib.sh"
 hook_read_input
 hook_debug
 hook_in_tmux || exit 0

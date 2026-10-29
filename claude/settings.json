@@ -5,7 +5,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "HOOK_AGENT=claude $HOME/.copilot/hooks/copilot-working.sh"
+            "command": "HOOK_AGENT=claude $HOME/.config/agent-hooks/working.sh"
           }
         ]
       }
@@ -16,7 +16,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "HOOK_AGENT=claude $HOME/.copilot/hooks/copilot-tool-input.sh"
+            "command": "HOOK_AGENT=claude $HOME/.config/agent-hooks/tool-input.sh"
           }
         ]
       }
@@ -27,7 +27,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "HOOK_AGENT=claude $HOME/.copilot/hooks/copilot-input-answered.sh"
+            "command": "HOOK_AGENT=claude $HOME/.config/agent-hooks/input-answered.sh"
           }
         ]
       }
@@ -37,7 +37,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "HOOK_AGENT=claude $HOME/.copilot/hooks/copilot-input-needed.sh"
+            "command": "HOOK_AGENT=claude $HOME/.config/agent-hooks/input-needed.sh"
           }
         ]
       }
@@ -47,7 +47,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "HOOK_AGENT=claude $HOME/.copilot/hooks/copilot-done.sh"
+            "command": "HOOK_AGENT=claude $HOME/.config/agent-hooks/done.sh"
           }
         ]
       }
@@ -55,8 +55,14 @@
   },
   "statusLine": {
     "type": "command",
-    "command": "input=$(cat); model=$(echo \"$input\" | jq -r '.model.display_name'); used=$(echo \"$input\" | jq -r '.context_window.used_percentage // empty'); five=$(echo \"$input\" | jq -r '.rate_limits.five_hour.used_percentage // empty'); week=$(echo \"$input\" | jq -r '.rate_limits.seven_day.used_percentage // empty'); effort=$(echo \"$input\" | jq -r '.effort.level // empty'); out=$(printf '\\033[01;36m%s\\033[00m' \"$model\"); [ -n \"$effort\" ] && out=\"$out | effort: $effort\"; [ -n \"$used\" ] && out=\"$out | ctx: $(printf '%.0f' \"$used\")% used\"; [ -n \"$five\" ] && out=\"$out | 5h: $(printf '%.0f' \"$five\")%\"; [ -n \"$week\" ] && out=\"$out | 7d: $(printf '%.0f' \"$week\")%\"; echo \"$out\""
+    "command": "input=$(cat); model=$(echo \"$input\" | jq -r '.model.display_name'); used=$(echo \"$input\" | jq -r '.context_window.used_percentage // empty'); five=$(echo \"$input\" | jq -r '.rate_limits.five_hour.used_percentage // empty'); week=$(echo \"$input\" | jq -r '.rate_limits.seven_day.used_percentage // empty'); effort=$(echo \"$input\" | jq -r '.effort.level // empty'); size=$(echo \"$input\" | jq -r '.context_window.context_window_size // empty'); pct() { [ -n \"$1\" ] && printf '%.0f%%' \"$1\" || printf -- '-'; }; if [ -z \"$size\" ]; then sz=''; elif [ \"$size\" -ge 1000000 ]; then sz=\" of $((size / 1000000))M\"; else sz=\" of $((size / 1000))k\"; fi; out=$(printf '\\033[01;36m%s\\033[00m' \"$model\"); [ -n \"$effort\" ] && out=\"$out | effort: $effort\"; out=\"$out | ctx: $(pct \"$used\")$sz | 5h: $(pct \"$five\") | 7d: $(pct \"$week\")\"; echo \"$out\""
+  },
+  "modelSettings": {
+    "claude-opus-5-5": {
+      "effortLevel": "xhigh"
+    }
   },
   "theme": "dark",
-  "model": "sonnet"
+  "model": "opus",
+  "advisorModel": "opus"
 }

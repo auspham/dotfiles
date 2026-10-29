@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # UserPromptSubmit hook: agent starts working -> animated spinner on the window.
-source "$HOME/.copilot/hooks/lib.sh"
+source "$HOME/.config/agent-hooks/lib.sh"
 hook_read_input
 hook_debug
 hook_in_tmux || exit 0

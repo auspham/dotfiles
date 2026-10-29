@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # PreToolUse hook: every tool proves its agent is active, including autonomous resumes
 # that have no UserPromptSubmit hook. Input tools stop the spinner until answered.
-source "$HOME/.copilot/hooks/lib.sh"
+source "$HOME/.config/agent-hooks/lib.sh"
 hook_read_input
 hook_debug
 hook_in_tmux || exit 0

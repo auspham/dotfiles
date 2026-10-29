@@ -30,7 +30,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "/home/austin/.copilot/hooks/copilot-done.sh"
+            "command": "/home/austin/.config/agent-hooks/done.sh"
           }
         ]
       }
@@ -40,7 +40,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "/home/austin/.copilot/hooks/copilot-working.sh"
+            "command": "/home/austin/.config/agent-hooks/working.sh"
           }
         ]
       }
@@ -50,7 +50,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "/home/austin/.copilot/hooks/copilot-input-needed.sh"
+            "command": "/home/austin/.config/agent-hooks/input-needed.sh"
           }
         ]
       }
@@ -60,7 +60,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "/home/austin/.copilot/hooks/copilot-tool-input.sh"
+            "command": "/home/austin/.config/agent-hooks/tool-input.sh"
           }
         ]
       }
@@ -70,7 +70,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "/home/austin/.copilot/hooks/copilot-input-answered.sh"
+            "command": "/home/austin/.config/agent-hooks/input-answered.sh"
           }
         ]
       }

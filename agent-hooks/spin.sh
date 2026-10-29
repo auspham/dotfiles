@@ -8,8 +8,8 @@
 # showing its "esc cancel" footer while our state is still "working", the turn ended
 # abnormally and we flip the window to the red cancelled marker instead of spinning
 # forever.
-source "$HOME/.copilot/hooks/lib.sh"
-win="$1"; name="${2:-${HOOK_AGENT:-copilot}}"; gen="$3"; pane="${4:-}"
+source "$HOME/.config/agent-hooks/lib.sh"
+win="$1"; name="${2:-${HOOK_AGENT:-copilot}}"; gen="$3"; pane="${4:-}"; transcript="${5:-}"
 [ -n "$win" ] || exit 0
 mkdir -p "$hook_state_dir" 2>/dev/null
 pidf="$(hook_pid_file "$win")"; statef="$(hook_state_file "$win")"
@@ -22,6 +22,8 @@ echo "$$" > "$pidf"
 grace="${hook_cancel_grace_frames:-16}"       # ~2.0s startup grace
 check_every="${hook_cancel_check_frames:-6}"  # ~0.7s between footer probes
 need_idle="${hook_cancel_idle_hits:-2}"       # consecutive idle probes to confirm
+# Claude generates its conversation title mid-turn, so re-read it while spinning.
+title_every="${hook_title_check_frames:-40}"  # ~5s between title refreshes
 
 read -ra frames <<< "$hook_spinner_frames"; n=${#frames[@]}
 exec 9<> <(:) 2>/dev/null            # never-ready fd: sub-second wait without spawning sleep
@@ -34,6 +36,10 @@ while [ "$i" -lt "$max" ]; do
     working|finishing) [ "$g" = "$gen" ] || break ;;
     *) break ;;
   esac
+  if [ -n "$transcript" ] && [ $(( i % title_every )) -eq 0 ]; then
+    title="$(hook_claude_title "$transcript")"
+    [ -n "$title" ] && name="$title"
+  fi
   tmux rename-window -t "$win" "${frames[i % n]} $name" 2>/dev/null || break
 
   if [ -n "$pane" ] && [ "$i" -ge "$grace" ] && [ $(( i % check_every )) -eq 0 ]; then

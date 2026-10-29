@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Stop hook: remove this agent and finish only when the window has no active agents.
-source "$HOME/.copilot/hooks/lib.sh"
+source "$HOME/.config/agent-hooks/lib.sh"
 hook_read_input
 hook_debug
 hook_in_tmux || exit 0

@@ -2,7 +2,7 @@
 # PostToolUse hook: resume the working spinner once the agent's wait resolves -
 # either an input tool just completed (AskUserQuestion / exit_plan_mode) or the
 # window is still stuck in "input" while a non-input tool runs.
-source "$HOME/.copilot/hooks/lib.sh"
+source "$HOME/.config/agent-hooks/lib.sh"
 hook_read_input
 hook_debug
 hook_in_tmux || exit 0
