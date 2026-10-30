@@ -47,6 +47,7 @@
       "g r n": "editor::Rename",
       "g r a": "editor::ToggleCodeActions",
       "space p": "editor::Format",
+      "space t i": "editor::ToggleInlayHints",
       "space space": "file_finder::Toggle",
       "space v": "pane::SplitVertical",
       "space w": "pane::CloseActiveItem",
