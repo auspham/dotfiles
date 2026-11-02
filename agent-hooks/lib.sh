@@ -1,17 +1,23 @@
 #!/usr/bin/env bash
-# Shared helpers for Copilot CLI / Claude Code tmux/sound hooks.
+# Shared helpers for Copilot CLI / Claude Code / OpenCode tmux/sound hooks.
 # Source this, then call hook_read_input once and use the helpers below.
 
-# Which agent TUI fired the hook: "copilot" (default) or "claude" (set HOOK_AGENT=claude
-# in the Claude Code hook commands). Picks the default window name and the footer probe.
+# Which agent TUI fired the hook: "copilot" (default), "claude" (HOOK_AGENT=claude in the
+# Claude Code hook commands) or "opencode" (set by the OpenCode TUI plugin). Picks the
+# default window name, the pane probe and whether hooks play sounds.
 hook_agent="${HOOK_AGENT:-copilot}"
 
 copilot_db="$HOME/.copilot/session-store.db"
 sound_dir="/usr/share/sounds/freedesktop/stereo"
 
-# Sounds (freedesktop .oga names under $sound_dir).
+# Sounds (freedesktop .oga names under $sound_dir). OpenCode's built-in
+# opencode.notifications plugin already plays its own, so its hooks stay silent.
 hook_sound_input="bell.oga"
 hook_sound_done="complete.oga"
+case "$hook_agent" in
+  opencode) hook_sound_enabled=0 ;;
+  *) hook_sound_enabled=1 ;;
+esac
 
 # Tools that mean "agent is waiting on the user" (names as seen in hook payloads).
 hook_input_tools="AskUserQuestion exit_plan_mode ExitPlanMode"
@@ -39,6 +45,9 @@ hook_idle_footer_re='commands.*\? help|tab next tab|space hold to record'
 hook_claude_busy_re='(…|\.\.\.) \([0-9]|esc to interrupt'
 # Non-blank lines above Claude's input box to search, enough to skip a task list.
 hook_claude_busy_lines=12
+# OpenCode reports every turn boundary through plugin events, so its pane probe only
+# checks that the TUI is still the pane's foreground process.
+hook_opencode_command_re='^opencode'
 
 # Working spinner: space-separated frames + frame delay (~8 fps).
 hook_spinner_frames="⠋ ⠙ ⠹ ⠸ ⠼ ⠴ ⠦ ⠧ ⠇ ⠏"
@@ -146,7 +155,9 @@ hook_session_name() {
     sid="$(hook_field session_id)"
     [ -n "$sid" ] && name="$(sqlite3 "$copilot_db" "select summary from sessions where id='$sid';" 2>/dev/null)"
   fi
-  if [ -z "$name" ]; then
+  # OpenCode always sends its session title; an empty one is a brand-new session, which
+  # must not inherit the previous session's window name.
+  if [ -z "$name" ] && [ "$hook_agent" != opencode ]; then
     win="$(hook_window_id)"
     [ -n "$win" ] && name="$(hook_strip_marker "$(tmux display-message -p -t "$win" '#{window_name}' 2>/dev/null)")"
   fi
@@ -154,6 +165,7 @@ hook_session_name() {
 }
 
 hook_play() {
+  [ "$hook_sound_enabled" = 1 ] || return 0
   canberra-gtk-play -f "$sound_dir/$1" >/dev/null 2>&1 || printf '\a'
 }
 
@@ -260,8 +272,15 @@ hook_set_style() {
 # final four non-blank lines because narrow panes can wrap the controls above the
 # model/context line. This still excludes body text behind the input box. If the pane
 # can't be read, we assume busy so a live turn is never flipped to cancelled.
+# For OpenCode it is false only once the TUI is no longer the pane's foreground process.
 hook_pane_working() {
-  local body footer above
+  local body footer above command
+  if [ "$hook_agent" = opencode ]; then
+    command="$(tmux display-message -p -t "$1" '#{pane_current_command}' 2>/dev/null)" || return 0
+    [ -z "$command" ] && return 0
+    printf '%s' "$command" | grep -qE "$hook_opencode_command_re"
+    return
+  fi
   body="$(tmux capture-pane -p -t "$1" 2>/dev/null)" || return 0
   if [ "$hook_agent" = claude ]; then
     above="$(printf '%s\n' "$body" | grep -vE '^[[:space:]]*$' | awk -v max="$hook_claude_busy_lines" '

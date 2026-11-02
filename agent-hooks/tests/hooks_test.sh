@@ -21,6 +21,7 @@ case "$1" in
       '#{window_id}') printf '%s\n' '@0' ;;
       '#{pane_id}') printf '%s\n' '%0' ;;
       '#{window_name}') printf '%s\n' 'Implement AI Worker Feature' ;;
+      '#{pane_current_command}') printf '%s\n' "${TMUX_PANE_COMMAND-opencode}" ;;
     esac
     ;;
   capture-pane)
@@ -316,5 +317,93 @@ env \
   bash "$test_home/.config/agent-hooks/spin.sh" '@0' 'claude' "$generation" '%0' "$claude_transcript"
 grep -q '^tmux rename-window -t @0 ⠋ Refreshed title$' "$test_log" \
   || { printf 'FAIL: claude spinner refreshes the title mid-turn\n' >&2; exit 1; }
+
+opencode_env() {
+  env \
+    HOME="$test_home" \
+    PATH="$test_bin:$PATH" \
+    TEST_LOG="$test_log" \
+    TMUX='test' \
+    TMUX_PANE='%0' \
+    XDG_RUNTIME_DIR="$runtime_dir" \
+    HOOK_AGENT=opencode \
+    "$@"
+}
+
+opencode_hook() {
+  printf '%s' "$2" | opencode_env bash "$test_home/.config/agent-hooks/opencode.sh" "$1"
+}
+
+opencode_pane_state() {
+  TMUX_PANE_COMMAND="$1" opencode_env bash -c \
+    'source "$HOME/.config/agent-hooks/lib.sh"; hook_pane_working %0 && echo busy || echo idle'
+}
+
+assert_logged() {
+  grep -qxF -- "$1" "$test_log" || { printf 'FAIL: %s: missing log line %s\n' "$2" "$1" >&2; exit 1; }
+}
+
+all_sound_count() {
+  grep -c '^sound ' "$test_log" || true
+}
+
+oc_build='{"session_id":"ses_build","session_name":"Fix the build"}'
+oc_docs='{"session_id":"ses_docs","session_name":"Write docs"}'
+sounds_before_opencode="$(all_sound_count)"
+
+opencode_hook working "$oc_build"
+assert_equal working "$(state)" 'opencode session start spins'
+assert_equal 1 "$(agent_count)" 'opencode session is tracked'
+assert_logged 'tmux set-window-option -t @0 window-status-style bg=blue,fg=white' 'opencode spinner style'
+opencode_hook working "$oc_docs"
+assert_equal 2 "$(agent_count)" 'second opencode tab is tracked'
+
+opencode_hook done "$oc_build"
+assert_equal working "$(state)" 'one finished tab keeps spinning while another runs'
+assert_equal 1 "$(agent_count)" 'finished opencode tab is untracked'
+
+opencode_hook input "$oc_docs"
+assert_equal input "$(state)" 'opencode permission or form shows input'
+opencode_hook input "$oc_docs"
+assert_equal input "$(state)" 'second pending input stays in input'
+opencode_hook answered "$oc_docs"
+assert_equal working "$(state)" 'resolved opencode input resumes the spinner'
+
+opencode_hook done "$oc_docs"
+assert_equal done "$(state)" 'last opencode session finishes immediately'
+assert_equal 0 "$(agent_count)" 'all opencode sessions are untracked'
+assert_logged 'tmux rename-window -t @0 ✓ Write docs' 'opencode done marker'
+opencode_hook answered "$oc_docs"
+assert_equal done "$(state)" 'late opencode answer does not resurrect the window'
+
+opencode_hook title '{"session_id":"ses_docs","session_name":"Docs for hooks"}'
+assert_equal done "$(state)" 'opencode rename keeps the done state'
+assert_logged 'tmux rename-window -t @0 ✓ Docs for hooks' 'opencode rename after done'
+
+opencode_hook working '{"session_id":"ses_new","session_name":""}'
+for _ in $(seq 20); do
+  grep -q '^setsid .*spin\.sh @0 opencode ' "$test_log" && break
+  sleep 0.05
+done
+grep -q '^setsid .*spin\.sh @0 opencode ' "$test_log" \
+  || { printf 'FAIL: untitled opencode session must not inherit the window name\n' >&2; exit 1; }
+opencode_hook cancelled '{"session_id":"ses_new","session_name":""}'
+assert_equal cancelled "$(state)" 'interrupted opencode session is cancelled'
+assert_logged 'tmux rename-window -t @0 ✗ opencode' 'opencode cancel marker'
+assert_equal "$sounds_before_opencode" "$(all_sound_count)" 'opencode hooks leave sounds to opencode'
+
+assert_equal busy "$(opencode_pane_state opencode)" 'running opencode TUI is busy'
+assert_equal busy "$(opencode_pane_state '')" 'unreadable opencode pane is assumed busy'
+assert_equal idle "$(opencode_pane_state zsh)" 'exited opencode TUI is idle'
+
+opencode_hook working "$oc_build"
+read -r _ generation _ < "$runtime_dir/agent-hooks/0.state"
+TMUX_PANE_COMMAND=zsh opencode_env \
+  hook_cancel_grace_frames=0 \
+  hook_cancel_check_frames=1 \
+  hook_cancel_idle_hits=1 \
+  bash "$test_home/.config/agent-hooks/spin.sh" '@0' 'Fix the build' "$generation" '%0'
+assert_equal cancelled "$(state)" 'watchdog cancels when the opencode TUI exits mid-turn'
+assert_equal 0 "$(agent_count)" 'opencode watchdog clears active markers'
 
 printf 'All agent hook lifecycle tests passed.\n'

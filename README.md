@@ -7,7 +7,7 @@ Simply:
 
 Download JetbrainsMono Nerd Font
 
-## Agent hooks (Copilot CLI + Claude Code)
+## Agent hooks (Copilot CLI + Claude Code + OpenCode)
 `mkdir -p ~/.config/agent-hooks && cp agent-hooks/*.sh ~/.config/agent-hooks/ && chmod +x ~/.config/agent-hooks/*.sh`
 Run `bash agent-hooks/tests/hooks_test.sh` to check the lifecycle after changing them.
 
@@ -20,6 +20,10 @@ Hooks (share `agent-hooks/lib.sh`) drive a per-window tmux state machine named a
 Claude Code shares the same `~/.config/agent-hooks/*.sh` tmux spinner/sound hooks: `claude/settings.json` wires UserPromptSubmit, PreToolUse, PostToolUse, Notification and Stop to them with `HOOK_AGENT=claude`. That switches the footer probe in `lib.sh` to Claude's busy indicator (the live activity line above the input box, e.g. `✶ Creating… (13s · ↓ 892 tokens)`, or `esc to interrupt` on older versions) instead of Copilot's idle footer, adds `ExitPlanMode` as an input tool, and names the window after the conversation title read from the transcript (a `/rename` title wins over the generated one). The spinner re-reads the title every ~5s, since Claude generates it partway through the first turn, and falls back to `claude` until then.
 
 The `settings.json` status line shows the model, effort, context usage with window size (`ctx: 4% of 1M`) and 5-hour/7-day rate limits, with `-` placeholders until the first response arrives.
+
+## OpenCode
+`mkdir -p ~/.config/opencode/plugins && cp -r opencode/plugins/agent-hooks ~/.config/opencode/plugins/` (install the agent hooks above first)
+OpenCode v2 has no shell hooks, so a TUI plugin (`opencode/plugins/agent-hooks/tui.ts`, auto-discovered from `~/.config/opencode/plugins/<name>/tui.ts` and hot-reloaded into running TUIs) drives the same tmux window states through `agent-hooks/opencode.sh <action>` with `HOOK_AGENT=opencode`. It runs inside the TUI process, so `$TMUX_PANE` is the pane showing that TUI, and since the background service broadcasts every session to every TUI it only reacts to root sessions open as tabs in its own TUI. OpenCode reports turn boundaries explicitly, so nothing is scraped from the pane: `session.execution.started` spins, `succeeded` shows the green `✓` (unless a direct subagent is still running), `interrupted` (user, inactivity, shutdown) and `failed` show the red `✗`, a pending `permission.asked` or `form.created` shows the yellow `(?)` until the last one is answered, and `session.renamed` retitles the window. Several tabs running in one TUI share the active-session markers, so the window finishes only when the last one does. Calls run one at a time in event order. The spinner watchdog only checks that `opencode` is still the pane's foreground process and marks the window cancelled if the TUI exits mid-turn. The hooks play no sounds for OpenCode because its built-in `opencode.notifications` plugin already does.
 
 ## lazygit
 `mkdir -p ~/.config/lazygit && cp lazygit/config.yml ~/.config/lazygit/config.yml`
