@@ -572,6 +572,10 @@ binds {
 
     Mod+C { center-column; }
 
+    Mod+Shift+2 hotkey-overlay-title="Fit windows into 2 columns" { spawn "/home/austin/.local/bin/niri-fit-columns" "2"; }
+    Mod+Shift+3 hotkey-overlay-title="Fit windows into 3 columns" { spawn "/home/austin/.local/bin/niri-fit-columns" "3"; }
+    Mod+Shift+4 hotkey-overlay-title="Fit windows into 4 columns" { spawn "/home/austin/.local/bin/niri-fit-columns" "4"; }
+
     // Center all fully visible columns on screen.
     Mod+Ctrl+C { center-visible-columns; }
 

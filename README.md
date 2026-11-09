@@ -31,3 +31,7 @@ OpenCode v2 has no shell hooks, so a TUI plugin (`opencode/plugins/agent-hooks/t
 ## WezTerm
 `cp .wezterm.lua ~/`
 JetBrainsMono Nerd Font Mono @ 12 (download the Nerd Font above), `Dark+` color scheme (VSCode's default dark theme, bundled with WezTerm), 0.95 background opacity, minimal window (title-bar buttons integrated into the tab bar, which hides itself at a single tab), zeroed top/bottom padding so content fills the height, and system + visual bell. `custom_block_glyphs` is off so braille (e.g. the tmux copilot spinner) renders from the font on the baseline. WezTerm auto-reloads the config on save.
+
+## niri
+`mkdir -p ~/.config/niri ~/.local/bin && cp .config/niri/config.kdl ~/.config/niri/ && cp .local/bin/niri-fit-columns ~/.local/bin/` (the binds spawn the script by absolute path, so adjust `/home/austin` in `config.kdl` if your home differs)
+`Super+Shift+2/3/4` runs `niri-fit-columns N`, which rebalances the focused workspace's tiled windows into N equal columns that fit the screen.

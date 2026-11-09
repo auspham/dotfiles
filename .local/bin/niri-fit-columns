@@ -1,0 +1,102 @@
+#!/usr/bin/env python3
+"""Rearrange the focused niri workspace into N equal columns that fit the screen.
+
+Usage: niri-fit-columns N
+
+Tiled windows keep their reading order (column by column, top to bottom) and are
+dealt into N balanced columns. With fewer windows than N, one column per window
+is used, each sized 1/N of the screen.
+"""
+from __future__ import annotations
+
+import json
+import subprocess
+import sys
+from dataclasses import dataclass
+
+
+@dataclass(frozen=True)
+class Window:
+    id: int
+    col: int
+    row: int
+
+
+def niri(*args: str) -> str:
+    return subprocess.run(
+        ["niri", "msg", *args], check=True, capture_output=True, text=True
+    ).stdout
+
+
+def action(name: str, *args: str) -> None:
+    niri("action", name, *args)
+
+
+def tiled_windows(workspace_id: int) -> list[Window]:
+    raw: list[dict] = json.loads(niri("--json", "windows"))
+    windows = [
+        Window(w["id"], *w["layout"]["pos_in_scrolling_layout"])
+        for w in raw
+        if w["workspace_id"] == workspace_id and not w["is_floating"]
+    ]
+    return sorted(windows, key=lambda w: (w.col, w.row))
+
+
+def focused_window() -> dict | None:
+    raw: list[dict] = json.loads(niri("--json", "windows"))
+    return next((w for w in raw if w["is_focused"]), None)
+
+
+def flatten(workspace_id: int) -> None:
+    """Expel windows until every column holds exactly one window."""
+    while True:
+        windows = tiled_windows(workspace_id)
+        multi = [w for w in windows if w.row > 1]
+        if not multi:
+            return
+        # last column's bottom window first, so expelled windows keep their order
+        target = max(multi, key=lambda w: (w.col, w.row))
+        action("focus-window", "--id", str(target.id))
+        action("expel-window-from-column")
+
+
+def group_sizes(total: int, columns: int) -> list[int]:
+    base, extra = divmod(total, columns)
+    return [base + (1 if i < extra else 0) for i in range(columns)]
+
+
+def main() -> int:
+    if len(sys.argv) != 2 or not sys.argv[1].isdigit() or int(sys.argv[1]) < 1:
+        print(__doc__, file=sys.stderr)
+        return 2
+    wanted = int(sys.argv[1])
+
+    focused = focused_window()
+    if focused is None or focused["is_floating"]:
+        return 0
+    workspace_id: int = focused["workspace_id"]
+
+    total = len(tiled_windows(workspace_id))
+    columns = min(wanted, total)
+
+    flatten(workspace_id)
+
+    for index, size in enumerate(group_sizes(total, columns), start=1):
+        action("focus-column", str(index))
+        for _ in range(size - 1):
+            action("consume-window-into-column")
+
+    percent = f"{100 / wanted:.5f}%"
+    for window in tiled_windows(workspace_id):
+        action("focus-window", "--id", str(window.id))
+        action("reset-window-height")
+        action("set-column-width", percent)
+
+    action("focus-window", "--id", str(focused["id"]))
+    action("focus-column-first")
+    action("focus-window", "--id", str(focused["id"]))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
