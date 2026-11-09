@@ -7,10 +7,6 @@ Simply:
 
 Download JetbrainsMono Nerd Font
 
-## tmux
-`cp .tmux.conf ~/.tmux.conf`
-Copying (vi `Enter`, mouse drag, or `prefix p` for the whole scrollback) goes to the system clipboard via `pbcopy` on macOS, `wl-copy` on Wayland (`wl-clipboard`), `xclip` on X11 and `clip.exe` on WSL, chosen on each copy from the session's `WAYLAND_DISPLAY`/`DISPLAY`. Every copy is also sent as OSC 52, so copying in tmux on a remote box over ssh (or in nested tmux) lands in the local clipboard when the terminal supports it (WezTerm does).
-
 ## Agent hooks (Copilot CLI + Claude Code + OpenCode)
 `mkdir -p ~/.config/agent-hooks && cp agent-hooks/*.sh ~/.config/agent-hooks/ && chmod +x ~/.config/agent-hooks/*.sh`
 Run `bash agent-hooks/tests/hooks_test.sh` to check the lifecycle after changing them.
