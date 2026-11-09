@@ -14,8 +14,11 @@ if hook_agents_active; then
   esac
   exit 0
 fi
+# Claude Code never fires Stop for an interrupted turn, so a Stop after a cancel means
+# the watchdog misread the pane: finish normally instead of keeping the red marker.
 case "$state" in
-  done|cancelled|finishing) exit 0 ;;
+  done|finishing) exit 0 ;;
+  cancelled) [ "$hook_agent" = claude ] || exit 0 ;;
 esac
 hook_start_finishing "$(hook_session_name)"
 exit 0

@@ -268,6 +268,8 @@ claude_footer=(
 assert_equal busy "$(claude_pane_state '✶ Creating… (13s · ↓ 892 tokens)' "${claude_footer[@]}")" 'claude activity line is busy'
 assert_equal busy "$(claude_pane_state '✶ Creating… (2s)' '  ☐ Task one' '  ☐ Task two' "${claude_footer[@]}")" 'claude activity line above a task list is busy'
 assert_equal busy "$(claude_pane_state '✳ Thinking… (esc to interrupt)' "${claude_footer[@]}")" 'legacy claude interrupt hint is busy'
+assert_equal busy "$(claude_pane_state '✽ Twisting… (running PostToolUse hook · 1m 33s · ↓ 8.1k tokens)' '  ⎿  Tip: Run tasks in the cloud' "${claude_footer[@]}")" 'claude activity line while a hook runs is busy'
+assert_equal idle "$(claude_pane_state '● Stopping now… (as asked)' '✻ Churned for 8s · done 9:10 PM' "${claude_footer[@]}")" 'claude reply text with an ellipsis is not an activity line'
 assert_equal idle "$(claude_pane_state '✻ Churned for 8s · done 9:10 PM' "${claude_footer[@]}")" 'claude turn summary is idle'
 assert_equal busy "$(claude_pane_state 'Do you want to proceed?' '  1. Yes')" 'claude pane without an input box is assumed busy'
 
@@ -317,6 +319,18 @@ env \
   bash "$test_home/.config/agent-hooks/spin.sh" '@0' 'claude' "$generation" '%0' "$claude_transcript"
 grep -q '^tmux rename-window -t @0 ⠋ Refreshed title$' "$test_log" \
   || { printf 'FAIL: claude spinner refreshes the title mid-turn\n' >&2; exit 1; }
+
+printf 'cancelled \n' > "$runtime_dir/agent-hooks/0.state"
+printf '%s' '{"session_id":"claude-session"}' | env \
+  HOME="$test_home" \
+  PATH="$test_bin:$PATH" \
+  TEST_LOG="$test_log" \
+  TMUX='test' \
+  TMUX_PANE='%0' \
+  XDG_RUNTIME_DIR="$runtime_dir" \
+  HOOK_AGENT=claude \
+  bash "$test_home/.config/agent-hooks/done.sh"
+assert_equal finishing "$(state)" 'claude stop after a false watchdog cancel finishes normally'
 
 opencode_env() {
   env \

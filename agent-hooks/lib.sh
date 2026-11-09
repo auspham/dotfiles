@@ -41,8 +41,11 @@ hook_idle_footer_re='commands.*\? help|tab next tab|space hold to record'
 # Claude Code is the reverse: for the whole turn (thinking, streaming, running tools)
 # it shows a live activity line above the input box, e.g. "✶ Creating… (13s · ↓ 892
 # tokens)", which becomes a past-tense summary ("✻ Churned for 8s") once back at the
-# prompt. Older versions showed "esc to interrupt" instead.
-hook_claude_busy_re='(…|\.\.\.) \([0-9]|esc to interrupt'
+# prompt. While a hook runs the parenthetical starts with the hook instead, e.g.
+# "(running PostToolUse hook · 1m 33s · …)". Anchoring on "<glyph> <Verb>… (" at the start
+# of the line keeps reply text that happens to contain "… (" from reading as busy. Older
+# versions showed "esc to interrupt".
+hook_claude_busy_re='^[^ ]+ [[:alpha:]]+(…|\.\.\.) \(|esc to interrupt'
 # Non-blank lines above Claude's input box to search, enough to skip a task list.
 hook_claude_busy_lines=12
 # OpenCode reports every turn boundary through plugin events, so its pane probe only
