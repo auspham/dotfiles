@@ -1,0 +1,63 @@
+onboarding = false
+
+[keys]
+prefix = "ctrl+s"
+
+# tmux: bind r source-file
+reload_config = "prefix+r"
+resize_mode = "prefix+shift+r"
+
+# tmux defaults
+detach = "prefix+d"
+new_tab = "prefix+c"
+next_tab = "prefix+n"
+previous_tab = "prefix+p"
+switch_tab = "prefix+1..9"
+rename_tab = "prefix+comma"
+close_tab = "prefix+&"
+rename_workspace = "prefix+$"
+workspace_picker = ["prefix+w", "prefix+s"]
+settings = "prefix+shift+s"
+split_vertical = ["prefix+%", "prefix+v"]
+split_horizontal = ["prefix+\"", "prefix+minus"]
+close_pane = "prefix+x"
+zoom = "prefix+z"
+copy_mode = "prefix+["
+last_pane = "prefix+;"
+cycle_pane_next = "prefix+o"
+open_notification_target = "prefix+shift+o"
+
+# tmux: bind -n C-h/j/k/l select-pane (prefix+arrows kept as fallback)
+focus_pane_left = ["ctrl+h", "prefix+left"]
+focus_pane_down = ["ctrl+j", "prefix+down"]
+focus_pane_up = ["ctrl+k", "prefix+up"]
+focus_pane_right = ["ctrl+l", "prefix+right"]
+
+# tmux: bind -n C-M-h/j/k/l swap-pane
+swap_pane_left = "ctrl+alt+h"
+swap_pane_down = "ctrl+alt+j"
+swap_pane_up = "ctrl+alt+k"
+swap_pane_right = "ctrl+alt+l"
+
+# tmux: bind h -> btop popup
+[[keys.command]]
+key = "prefix+h"
+type = "popup"
+command = "btop"
+width = "90%"
+height = "85%"
+
+# tmux: bind -n M-1 send-keys macro
+[[keys.command]]
+key = "alt+1"
+type = "shell"
+command = "herdr pane send-text \"$(herdr pane current | jq -r .result.pane.pane_id)\" 'Some example macro text'"
+
+[ui]
+tab_bar_position = "top"
+
+[theme]
+name = "catppuccin"
+
+[advanced]
+scrollback_limit_bytes = 50000000
