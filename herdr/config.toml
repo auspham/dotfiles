@@ -55,6 +55,13 @@ command = "herdr pane send-text \"$(herdr pane current | jq -r .result.pane.pane
 
 [ui]
 tab_bar_position = "top"
+tab_bar_right_separator = " │ "
+tab_bar_right = [
+  { type = "command", command = "/home/austin/.config/herdr/sysbar.py agents", interval_seconds = 2, timeout_seconds = 5 },
+  { type = "command", command = "/home/austin/.config/herdr/sysbar.py cpu", interval_seconds = 2, timeout_seconds = 5 },
+  { type = "command", command = "/home/austin/.config/herdr/sysbar.py mem", interval_seconds = 5, timeout_seconds = 5 },
+  { type = "command", command = "/home/austin/.config/herdr/sysbar.py net", interval_seconds = 2, timeout_seconds = 5 },
+]
 
 [theme]
 name = "catppuccin"
