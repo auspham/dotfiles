@@ -7,6 +7,12 @@
 // custom settings, run `zed: open default settings` from the
 // command palette (cmd-shift-p / ctrl-shift-p)
 {
+  "indent_guides": {
+    "coloring": "indent_aware",
+    "background_coloring": "indent_aware",
+    "line_width": 2,
+    "active_line_width": 3
+  },
   "ui_font_family": ".ZedMono",
   "git_panel": {
     "tree_view": true
@@ -128,7 +134,56 @@
     "light": "Catppuccin Frappé",
     "dark": "Catbox",
   },
+  "theme_overrides": {
+    "Catbox": {
+      "accents": ["#fb4934", "#fabd2f", "#b8bb26", "#8ec07c", "#83a598", "#d3869b"],
+      "tab.active_background": "#1d2021",
+      "tab.inactive_background": "#2a2827",
+      "tab_bar.background": "#2a2827",
+      "syntax": {
+        "string": { "color": "#a9b665" },
+        "keyword": { "color": "#ff6e5e" },
+        "function.builtin": { "color": "#fe8019" },
+        "constant": { "color": "#d3869b" },
+        "comment": { "color": "#a89984", "font_style": "italic" },
+        "comment.doc": { "color": "#c6b697", "font_style": "italic" }
+      }
+    }
+  },
+  "file_scan_exclusions": [
+    "**/.git",
+    "**/.svn",
+    "**/.hg",
+    "**/.jj",
+    "**/.sl",
+    "**/.repo",
+    "**/CVS",
+    "**/.DS_Store",
+    "**/Thumbs.db",
+    "**/.classpath",
+    "**/.settings",
+    "**/node_modules",
+    "**/.pnpm-store",
+    "**/.turbo"
+  ],
+  "auto_install_extensions": {
+    "tsgo": true
+  },
   "languages": {
+    "TypeScript": {
+      "language_servers": [
+        "typescript-ls",
+        "!vtsls",
+        "!typescript-language-server"
+      ]
+    },
+    "TSX": {
+      "language_servers": [
+        "typescript-ls",
+        "!vtsls",
+        "!typescript-language-server"
+      ]
+    },
     "CSharp": {
       "enable_language_server": false
     },
@@ -140,7 +195,7 @@
     }
   },
   "inlay_hints": {
-    "enabled": true,
+    "enabled": false,
   },
   "preview": {
     "lsp_results_location": "picker"
