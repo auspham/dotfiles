@@ -93,8 +93,8 @@ export default class Agents extends View {
     cx.timer.every(30000, (cx) => cx.notify());
     try { this.recent = JSON.parse(localStorage.getItem("recent") ?? "[]"); } catch { this.recent = []; }
     if (!Array.isArray(this.recent)) this.recent = [];
-    this.lastStatus = new Map();
-    cx.timer.every(1000, (cx) => this.trackEvents(cx));
+    this.lastStatus = new Map(); this.gone = new Map(); this.bootAt = Date.now();
+    cx.timer.every(500, (cx) => this.trackEvents(cx));
   }
 
   // Stamps agents whose state changed. Done and idle count as one: looking at a
@@ -183,10 +183,22 @@ export default class Agents extends View {
         this.recent.unshift({ id: `${a.address}:${a.status}:${now}`, addr: a.address, kind: a.status, at: now, state: "open", name: a.space_name || a.address });
         dirty = true;
       }
+      // Finished while you were looking: the app skips "done", so note it straight away as already seen.
+      if (before === "working" && a.status === "idle") {
+        this.recent.unshift({ id: `${a.address}:done:${now}`, addr: a.address, kind: "done", at: now, state: "seen", closed: now, name: a.space_name || a.address });
+        dirty = true;
+      }
       if (before === "blocked" && a.status !== "blocked") close(a.address, "blocked");
       if (before === "done" && a.status !== "done") close(a.address, "done");
     }
-    for (const e of this.recent) if (e.state === "open" && !present.has(e.addr)) { e.state = "seen"; e.closed = now; dirty = true; }
+    // An agent whose terminal is gone takes its entries with it, once it has stayed gone a few ticks (a restart briefly looks the same).
+    const live = new Set(terminals().filter((t) => t.state === "live").map((t) => t.address));
+    for (const addr of new Set(this.recent.map((e) => e.addr))) {
+      if (live.has(addr) || present.has(addr)) { this.gone.delete(addr); continue; }
+      const ticks = (this.gone.get(addr) ?? 0) + 1;
+      this.gone.set(addr, ticks);
+      if (ticks >= 6 && now - this.bootAt > 5000) { this.recent = this.recent.filter((e) => e.addr !== addr); this.gone.delete(addr); this.lastStatus.delete(addr); dirty = true; }
+    }
     if (this.recent.length > 40) { this.recent.length = 40; dirty = true; }
     if (!dirty) return;
     try { localStorage.setItem("recent", JSON.stringify(this.recent)); } catch { /* storage can be unavailable */ }
