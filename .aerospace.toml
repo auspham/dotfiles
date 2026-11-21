@@ -40,7 +40,7 @@ inherit-env-vars = true
 PATH = '/opt/homebrew/bin:/opt/homebrew/sbin:${PATH}'
 
 [mode.main.binding]
-cmd-q = 'close'
+cmd-q = 'close --quit-if-last-window'
 cmd-m = 'fullscreen --no-outer-gaps'
 
 cmd-h = 'focus left'
