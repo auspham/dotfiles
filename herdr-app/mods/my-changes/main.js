@@ -71,6 +71,51 @@ const ASK_TOOLS = "Read,Grep,Glob,Edit,MultiEdit,Write,Bash(git diff:*),Bash(git
 const testScript = () => `${home()}/.config/herdr-app/mods/my-changes/run-tests.sh`;
 // A run that never finished (its process was killed) stops counting as running after the script's own timeout.
 const RUN_LIMIT_MS = 16 * 60000;
+// Changed files as a folder tree: folders first, then files, by name; a folder holding only one folder
+// shares its row ("src/app"), as editors draw it. Each node: { name, path, dirs, files }.
+function fileTree(files) {
+  const root = { name: "", path: "", dirs: new Map(), files: [] };
+  for (const f of files) {
+    const parts = f.path.split("/");
+    parts.pop();
+    let node = root;
+    for (const part of parts) {
+      const path = node.path ? `${node.path}/${part}` : part;
+      if (!node.dirs.has(part)) node.dirs.set(part, { name: part, path, dirs: new Map(), files: [] });
+      node = node.dirs.get(part);
+    }
+    node.files.push(f);
+  }
+  const compact = (node) => {
+    for (const [key, dir] of node.dirs) {
+      let d = dir;
+      while (d.files.length === 0 && d.dirs.size === 1) {
+        const only = [...d.dirs.values()][0];
+        d = { ...only, name: `${d.name}/${only.name}` };
+      }
+      node.dirs.set(key, d);
+      compact(d);
+    }
+    return node;
+  };
+  return compact(root);
+}
+
+// The tree as rows to draw, top to bottom; a folded folder hides what is inside it.
+function treeRows(node, folded, depth = 0, out = []) {
+  const byName = (a, b) => a.name.localeCompare(b.name);
+  for (const dir of [...node.dirs.values()].sort(byName)) {
+    out.push({ kind: "dir", dir, depth });
+    if (!folded.has(dir.path)) treeRows(dir, folded, depth + 1, out);
+  }
+  for (const f of [...node.files].sort((a, b) => a.path.localeCompare(b.path))) out.push({ kind: "file", f, depth });
+  return out;
+}
+
+function treeFiles(node) {
+  return treeRows(node, new Set()).filter((row) => row.kind === "file").map((row) => row.f);
+}
+
 const duration = (ms) => {
   const m = Math.max(0, Math.floor(ms / 60000));
   return m < 1 ? "just now" : m < 60 ? `${m}m` : m < 1440 ? `${Math.floor(m / 60)}h` : `${Math.floor(m / 1440)}d`;
@@ -88,6 +133,7 @@ export default class Changes extends View {
     this.question.on("submit", (_e, cx) => this.ask("inline", cx));
     this.question.on("focus", (_e, cx) => { this.asking = true; cx.notify(); });
     this.question.on("blur", (_e, cx) => { this.asking = false; cx.notify(); });
+    this.view = this.read("view") === "list" ? "list" : "tree"; this.foldedDirs = new Set();
     this.sel = null; this.chat = { session: null, messages: [] }; this.hasQuestion = false; this.threadScroll = ScrollHandle.new(); this.scrollThreads = false; this.threadH = clamp(Number(this.read("threadH")) || 240, 90, 900); this.areaH = 700; this.vdrag = null;
     this.refresh(cx);
     cx.timer.every(10000, (cx) => this.refresh(cx));
@@ -100,12 +146,13 @@ export default class Changes extends View {
   // `herdr-app do my-changes.<command>`, and what a key binding can send: range:work, range:branch, next, prev, mark, open:<path>
   command(name, cx) {
     const [verb, arg] = [name.split(":")[0], name.includes(":") ? name.slice(name.indexOf(":") + 1) : ""];
-    const at = this.files.findIndex((f) => f.path === this.open);
+    const order = this.fileOrder(), at = order.findIndex((f) => f.path === this.open);
     if (verb === "range") this.setRange(arg === "branch" ? "branch" : "work", cx);
     else if (verb === "mode") this.setMode(arg === "split" ? "split" : "unified", cx);
     else if (verb === "expand") this.toggleExpand();
     else if (verb === "click" || verb === "shiftclick") this.pickRow(`${this.mode}${arg}`, verb === "shiftclick", cx);
     else if (verb === "threadh") { this.threadH = clamp(Number(arg) || 240, 90, 900); this.write("threadH", String(this.threadH)); }
+    else if (verb === "view") this.setView(arg === "list" ? "list" : "tree");
     else if (verb === "tests") this.runTests(cx);
     else if (verb === "zed") this.openInEditor(cx);
     else if (verb === "focus" && !arg) { this.handle.focus(); setShared("nav.focus", "changes"); }
@@ -118,7 +165,7 @@ export default class Changes extends View {
     else if (verb === "ask") { const [kind, ...rest] = arg.split(":"); this.question.set_value(rest.join(":")); this.ask(kind, cx); }
     else if (verb === "ratio") { this.ratio = clamp(Number(arg) || 0.5, 0.15, 0.85); this.write("ratio", String(this.ratio)); }
     else if (verb === "next" || verb === "prev") {
-      const target = this.files[at + (verb === "next" ? 1 : -1)];
+      const target = order[at + (verb === "next" ? 1 : -1)];
       if (target) this.pick(target.path, cx, true);
     } else if (verb === "mark" && this.open) this.toggleReviewed(this.open, cx, true);
     else if (verb === "open" && arg) this.pick(arg, cx, true);
@@ -459,6 +506,41 @@ export default class Changes extends View {
     });
   }
 
+  fileOrder() { return this.view === "tree" ? treeFiles(fileTree(this.files)) : this.files; }
+
+  setView(view) { this.view = view; this.write("view", view); }
+
+  toggleDir(path, cx) {
+    if (this.foldedDirs.has(path)) this.foldedDirs.delete(path); else this.foldedDirs.add(path);
+    cx.notify();
+  }
+
+  fileRow(f, t, depth, tree) {
+    const parts = f.path.split("/"), name = parts.pop();
+    return h_flex().id(`change-${f.path}`).h(28).flex_none().pl(8 + depth * 16).pr(8).gap(8).items_center().rounded(7).cursor_pointer().when(this.open === f.path, (e) => e.bg(t.selected)).hover((s) => s.bg(t.hover)).on_click((_e, cx) => this.pick(f.path, cx))
+      .child(div().id(`reviewed-${f.path}`).size(16).flex_none().rounded(4).border_1().border_color(this.reviewed(f) ? t.ansi2 : t.border)
+        .when(this.reviewed(f), (e) => e.bg(t.ansi2 + "30")).flex().items_center().justify_center().cursor_pointer()
+        .on_click((_e, cx) => { cx.stop_propagation(); this.toggleReviewed(f.path, cx); })
+        .when(this.reviewed(f), (e) => e.child(svg("mods/workspace-chrome/check.svg").size(11).text_color(t.ansi2))))
+      .child(div().w(14).text_size(11).text_color(f.status === "A" ? t.ansi2 : f.status === "D" ? t.ansi1 : f.status === "U" ? t.ansi1 : t.blocked).child(f.status))
+      .child(h_flex().flex_1().min_w(0).when(!tree, (e) => e.child(div().text_color(t.dim).truncate().child(parts.length ? parts.join("/") + "/" : ""))).child(div().max_w(260).min_w(0).truncate().text_color(this.reviewed(f) ? t.dim : t.foreground).child(name)))
+      .when(this.chat.messages.some((m) => m.path === f.path), (e) => e.child(div().id(`asked-${f.path}`).text_size(10).text_color(t.accent).tooltip("Questions you asked the chat about this file").child(`${this.chat.messages.filter((m) => m.path === f.path).length} asked`)))
+      .when(this.stale(f), (e) => e.child(div().text_size(10).text_color(t.blocked).child("changed")))
+      .when(f.add > 0, (e) => e.child(div().text_size(11).text_color(t.ansi2).child(`+${f.add}`))).when(f.del > 0, (e) => e.child(div().text_size(11).text_color(t.ansi1).child(`\u2212${f.del}`)));
+  }
+
+  dirRow(dir, t, depth) {
+    const inside = treeFiles(dir), done = inside.filter((f) => this.reviewed(f)).length;
+    const add = inside.reduce((n, f) => n + f.add, 0), del = inside.reduce((n, f) => n + f.del, 0);
+    const open = !this.foldedDirs.has(dir.path);
+    return h_flex().id(`dir-${dir.path}`).h(26).flex_none().pl(8 + depth * 16).pr(8).gap(6).items_center().rounded(7).cursor_pointer().hover((s) => s.bg(t.hover))
+      .on_click((_e, cx) => this.toggleDir(dir.path, cx))
+      .child(div().w(16).flex_none().text_size(10).text_color(t.dim).text_center().child(open ? "\u25be" : "\u25b8"))
+      .child(div().flex_1().min_w(0).truncate().text_size(12).text_color(t.muted).child(`${dir.name}/`))
+      .child(div().text_size(10).text_color(done === inside.length ? t.ansi2 : t.dim).child(`${done}/${inside.length}`))
+      .when(add > 0, (e) => e.child(div().text_size(11).text_color(t.ansi2).child(`+${add}`))).when(del > 0, (e) => e.child(div().text_size(11).text_color(t.ansi1).child(`\u2212${del}`)));
+  }
+
   setRange(range, cx) {
     if (this.range === range) return;
     this.range = range; this.write("range", range);
@@ -593,6 +675,7 @@ export default class Changes extends View {
   pick(path, cx, force = false) {
     this.sel = null;
     this.open = this.open === path && !force ? null : path;
+    if (this.open) for (const dir of [...this.foldedDirs]) if (this.open.startsWith(`${dir}/`)) this.foldedDirs.delete(dir);
     if (this.open) { this.scrollThreads = true; this.lastPath = this.open; this.write(this.lastKey(), JSON.stringify({ path: this.open, range: this.range })); } this.setLines([]); this.note = null;
     this.closed = !this.open;
     const context = this.context;
@@ -679,6 +762,7 @@ export default class Changes extends View {
     if (key() !== this.context) this.refresh(cx);
     const t = theme(), add = this.files.reduce((n, f) => n + f.add, 0), del = this.files.reduce((n, f) => n + f.del, 0);
     const openFile = this.files.find((f) => f.path === this.open);
+    const listRows = this.view === "tree" ? treeRows(fileTree(this.files), this.foldedDirs) : this.files.map((f) => ({ kind: "file", f, depth: 0 }));
     const splitting = this.mode === "split";
     if (splitting) this.layoutSplit();
     const reviewedCount = this.files.filter((f) => this.reviewed(f)).length;
@@ -697,6 +781,9 @@ export default class Changes extends View {
       .child(h_flex().h(42).flex_none().px(14).gap(8).items_center().border_b(1).border_color(t.border)
         .child(div().font_semibold().child("Changes"))
         .child(div().px(5).py(1).rounded(4).border_1().border_color(t.border).text_size(10).text_color(t.muted).child(`${this.files.length} files`))
+        .child(div().id("view-toggle").px(6).h(20).flex().items_center().rounded(5).bg(t.raised).text_size(11).text_color(t.muted).cursor_pointer()
+          .hover((h) => h.bg(t.hover).text_color(t.foreground)).tooltip(this.view === "tree" ? "Show a flat list" : "Show a folder tree")
+          .on_click((_e, cx) => { this.setView(this.view === "tree" ? "list" : "tree"); cx.notify(); }).child(this.view === "tree" ? "Tree" : "List"))
         .child(div().flex_1()).child(div().text_size(11).text_color(t.ansi2).child(`+${add}`)).child(div().text_size(11).text_color(t.ansi1).child(`−${del}`)))
       .child(h_flex().h(36).flex_none().px(10).gap(4).items_center().border_b(1).border_color(t.border)
         .child(seg("range-work", "Uncommitted", this.range === "work", true, (_e, cx) => this.setRange("work", cx)))
@@ -705,20 +792,8 @@ export default class Changes extends View {
         .child(div().text_size(11).text_color(this.files.length && reviewedCount === this.files.length ? t.ansi2 : t.muted).child(`${reviewedCount}/${this.files.length} reviewed`)))
       .when(Boolean(this.tests && this.root), (e) => e.child(this.testsRow(t)))
       // overflow_y_scrollbar() wraps the list, so its flex sizing never reached the panel's layout.
-      .child(div().flex_1().min_h(44).max_h(this.files.length * 28 + 12).relative().border_b(1).border_color(t.border)
-        .child(v_flex().id("changes-list").absolute().inset_0().overflow_y_scroll().p(6).children(this.files.map((f) => {
-        const parts = f.path.split("/"), name = parts.pop();
-        return h_flex().id(`change-${f.path}`).h(28).flex_none().px(8).gap(8).items_center().rounded(7).cursor_pointer().when(this.open === f.path, (e) => e.bg(t.selected)).hover((s) => s.bg(t.hover)).on_click((_e, cx) => this.pick(f.path, cx))
-          .child(div().id(`reviewed-${f.path}`).size(16).flex_none().rounded(4).border_1().border_color(this.reviewed(f) ? t.ansi2 : t.border)
-            .when(this.reviewed(f), (e) => e.bg(t.ansi2 + "30")).flex().items_center().justify_center().cursor_pointer()
-            .on_click((_e, cx) => { cx.stop_propagation(); this.toggleReviewed(f.path, cx); })
-            .when(this.reviewed(f), (e) => e.child(svg("mods/workspace-chrome/check.svg").size(11).text_color(t.ansi2))))
-          .child(div().w(14).text_size(11).text_color(f.status === "A" ? t.ansi2 : f.status === "D" ? t.ansi1 : f.status === "U" ? t.ansi1 : t.blocked).child(f.status))
-          .child(h_flex().flex_1().min_w(0).child(div().text_color(t.dim).truncate().child(parts.length ? parts.join("/") + "/" : "")).child(div().max_w(260).min_w(0).truncate().text_color(this.reviewed(f) ? t.dim : t.foreground).child(name)))
-          .when(this.chat.messages.some((m) => m.path === f.path), (e) => e.child(div().id(`asked-${f.path}`).text_size(10).text_color(t.accent).tooltip("Questions you asked the chat about this file").child(`${this.chat.messages.filter((m) => m.path === f.path).length} asked`)))
-          .when(this.stale(f), (e) => e.child(div().text_size(10).text_color(t.blocked).child("changed")))
-          .when(f.add > 0, (e) => e.child(div().text_size(11).text_color(t.ansi2).child(`+${f.add}`))).when(f.del > 0, (e) => e.child(div().text_size(11).text_color(t.ansi1).child(`−${f.del}`)));
-      })).when(!this.files.length, (e) => e.child(div().p(8).text_color(t.dim).child(this.error || (this.loading ? "Loading changes…" : this.root ? "No uncommitted changes" : "No folder")))))
+      .child(div().flex_1().min_h(44).max_h(listRows.length * 28 + 12).relative().border_b(1).border_color(t.border)
+        .child(v_flex().id("changes-list").absolute().inset_0().overflow_y_scroll().p(6).children(listRows.map((row) => row.kind === "dir" ? this.dirRow(row.dir, t, row.depth) : this.fileRow(row.f, t, row.depth, this.view === "tree"))).when(!this.files.length, (e) => e.child(div().p(8).text_color(t.dim).child(this.error || (this.loading ? "Loading changes…" : this.root ? "No uncommitted changes" : "No folder")))))
         .child(Scrollbar.vertical("changes-list").absolute().inset_0()))
       .when(this.limited, el => el.child(div().px(12).py(4).text_size(11).text_color(t.dim).child("Showing the first 1,000 changed files")))
       .when(Boolean(openFile), (el) => el.child(h_flex().flex_none().h(36).px(12).gap(8).items_center().border_b(1).border_color(t.border)

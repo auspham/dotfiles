@@ -565,6 +565,9 @@ export default class Spaces extends View {
         const at = order.indexOf(this.cur);
         const step = { down: 1, j: 1, up: -1, k: -1 }[e.key];
         if (step) this.cur = order[Math.max(0, Math.min(order.length - 1, at < 0 ? (step > 0 ? 0 : order.length - 1) : at + step))];
+        else if (e.key === "n") run("space.new");
+        else if (e.key === "r" && this.cur) run("space.rename", { id: this.cur });
+        else if (e.key === "x" && this.cur) run("space.close", { id: this.cur });
         else if ((e.key === "enter" || e.key === "space") && this.cur) run("space.select", { id: this.cur })
         else return;
         cx.stop_propagation();
