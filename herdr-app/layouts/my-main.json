@@ -186,6 +186,16 @@
                   "chrome": true
                 }
               }
+            },
+            {
+              "id": "agent-sound",
+              "type": "block",
+              "size": {
+                "px": 1
+              },
+              "content": {
+                "mod": "agent-sound"
+              }
             }
           ]
         }
@@ -206,5 +216,6 @@
   "traffic_lights": [
     12,
     16
-  ]
+  ],
+  "toast": "my-toast"
 }
