@@ -2,6 +2,7 @@ import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex, InputState, Input, Scrollbar, v_virtual_list, TextView, ScrollHandle } from "gpui-base";
 import { spaces, panes, focused, terminals, exec, readTextFile, watchFolder, theme, settings, nextCommand, layout, run, shared, setShared, home, openOverlay, closeOverlay, props } from "herdr";
 import { langFor, highlightRows, hashLines, wrapTokens } from "./highlight.js";
+import { LEVELS, LEVEL_LABEL, VERDICT_SCHEMA, pathFlags, diffFlags, isTest, isCode, testsChangedCode, levelOf, splitDiff, triagePrompt } from "./triage.js";
 
 function location() {
   const space = spaces().find((s) => s.active), f = focused();
@@ -121,6 +122,12 @@ const duration = (ms) => {
   return m < 1 ? "just now" : m < 60 ? `${m}m` : m < 1440 ? `${Math.floor(m / 60)}h` : `${Math.floor(m / 1440)}d`;
 };
 const clamp = (n, lo, hi) => Math.min(hi, Math.max(lo, n));
+const VIEWS = ["tree", "list", "risk"];
+const VIEW_LABEL = { tree: "Tree", list: "List", risk: "Risk" };
+const ROW_H = { dir: 26, group: 36, note: 24, file: 28, risk: 46 };
+const LEVEL_TONE = { high: "blocked", normal: "accent", skim: "muted" };
+// Adds an alpha to a #rrggbb theme colour; any other form is left as it is.
+const fade = (color, alpha) => (/^#[0-9a-f]{6}$/i.test(color) ? color + alpha : color);
 
 export default class Changes extends View {
   init(_props, cx) {
@@ -133,7 +140,8 @@ export default class Changes extends View {
     this.question.on("submit", (_e, cx) => this.ask("inline", cx));
     this.question.on("focus", (_e, cx) => { this.asking = true; cx.notify(); });
     this.question.on("blur", (_e, cx) => { this.asking = false; cx.notify(); });
-    this.view = this.read("view") === "list" ? "list" : "tree"; this.foldedDirs = new Set();
+    this.view = VIEWS.includes(this.read("view")) ? this.read("view") : "tree"; this.foldedDirs = new Set();
+    this.flags = new Map(); this.verdicts = {}; this.triaging = false;
     this.sel = null; this.chat = { session: null, messages: [] }; this.hasQuestion = false; this.threadScroll = ScrollHandle.new(); this.scrollThreads = false; this.threadH = clamp(Number(this.read("threadH")) || 240, 90, 900); this.areaH = 700; this.vdrag = null;
     this.listH = Number(this.read("listH")) || 0; this.listSeen = 200; this.panelH = 800; this.ldrag = null; // listH 0: as tall as its rows
     this.refresh(cx);
@@ -153,7 +161,8 @@ export default class Changes extends View {
     else if (verb === "expand") this.toggleExpand();
     else if (verb === "click" || verb === "shiftclick") this.pickRow(`${this.mode}${arg}`, verb === "shiftclick", cx);
     else if (verb === "threadh") { this.threadH = clamp(Number(arg) || 240, 90, 900); this.write("threadH", String(this.threadH)); }
-    else if (verb === "view") this.setView(arg === "list" ? "list" : "tree");
+    else if (verb === "view") this.setView(VIEWS.includes(arg) ? arg : "tree");
+    else if (verb === "triage") this.triage(cx);
     else if (verb === "listh") { this.listH = Number(arg) || 0; this.write("listH", String(this.listH)); }
     else if (verb === "tests") this.runTests(cx);
     else if (verb === "zed") this.openInEditor(cx);
@@ -191,6 +200,8 @@ export default class Changes extends View {
   }
 
   marksKey() { return `reviewed:${this.root}:${this.range === "branch" ? this.against : "work"}`; }
+  triageKey() { return `triage:${this.root}:${this.range === "branch" ? this.against : "work"}`; }
+  loadVerdicts() { try { this.verdicts = JSON.parse(this.read(this.triageKey()) ?? "{}") || {}; } catch { this.verdicts = {}; } }
   loadMarks() { try { this.marks = JSON.parse(this.read(this.marksKey()) ?? "{}") || {}; } catch { this.marks = {}; } }
   saveMarks() { this.write(this.marksKey(), JSON.stringify(this.marks)); }
   sig(f) { return `${f.status}:${f.add}:${f.del}`; }
@@ -205,7 +216,7 @@ export default class Changes extends View {
       this.marks[path] = { sig: this.sig(file), hash: file.hash ?? null };
       file.changedSince = false;
       if (advance) {
-        const next = this.files.find((f) => f.path !== path && !this.reviewed(f));
+        const next = this.fileOrder().find((f) => f.path !== path && !this.reviewed(f));
         if (next) this.pick(next.path, cx, true);
       }
     }
@@ -508,35 +519,199 @@ export default class Changes extends View {
     });
   }
 
-  fileOrder() { return this.view === "tree" ? treeFiles(fileTree(this.files)) : this.files; }
+  fileOrder() {
+    if (this.view === "risk") return this.riskGroups().flatMap((g) => treeFiles(fileTree(g.files)));
+    return this.view === "tree" ? treeFiles(fileTree(this.files)) : this.files;
+  }
 
   setView(view) { this.view = view; this.write("view", view); }
+
+  flagsOf(f) { return this.flags.get(f.path)?.flags ?? pathFlags(f); }
+  verdictOf(f) { const v = this.verdicts[f.path]; return v && v.sig === this.sig(f) ? v : null; }
+  levelFor(f) { return levelOf(this.flagsOf(f), this.verdictOf(f)); }
+
+  // Files by how closely to read them; within a level, the most rule flags first, then the biggest change.
+  riskGroups() {
+    const by = { high: [], normal: [], skim: [] };
+    for (const f of this.files) by[this.levelFor(f)].push(f);
+    const weight = (f) => this.flagsOf(f).filter((x) => x.level === "high").length;
+    return LEVELS.map((level) => ({ level, files: by[level].sort((a, b) => weight(b) - weight(a) || (b.add + b.del) - (a.add + a.del) || a.path.localeCompare(b.path)) }));
+  }
+
+  riskRows() {
+    const rows = [];
+    if (this.files.some((f) => isCode(f.path)) && !this.files.some((f) => isTest(f.path))) rows.push({ kind: "note", text: "No test files changed in this diff" });
+    for (const g of this.riskGroups()) {
+      if (!g.files.length) continue;
+      rows.push({ kind: "group", level: g.level, files: g.files });
+      // Each group is its own folder tree; its folds are kept apart from the other groups' and the Tree view's.
+      const fold = `${g.level}|`, folded = { has: (path) => this.foldedDirs.has(fold + path) };
+      if (!this.foldedDirs.has(`risk:${g.level}`)) for (const row of treeRows(fileTree(g.files), folded)) rows.push({ ...row, fold });
+    }
+    return rows;
+  }
+
+  untriaged() { return this.files.filter((f) => !this.verdictOf(f)); }
+
+  // Untracked files read whole: their text is their diff. Reading them also gives their line counts and finds binaries.
+  async readFresh(files, root, on) {
+    const out = new Map();
+    for (const f of files.filter((x) => x.fresh).slice(0, 200)) {
+      const text = await readTextFile(`${root}/${f.path}`, { on }).catch(() => null);
+      if (text === null || text.includes("\0")) { f.binary = true; continue; }
+      f.add = countLines(text);
+      out.set(f.path, text.slice(0, 200000).replace(/\n$/, "").split("\n").map((l) => `+${l}`).join("\n"));
+    }
+    return out;
+  }
+
+  async trackedDiffs(git, files, against, hasHead, context) {
+    const out = new Map(), paths = files.filter((f) => !f.fresh).map((f) => f.path);
+    const runs = hasHead ? [["diff", against]] : [["diff", "--cached"], ["diff"]];
+    for (let i = 0; i < paths.length; i += 100) {
+      for (const args of runs) {
+        const r = await git(["-c", "core.quotePath=false", ...args, `-U${context}`, "--no-ext-diff", "--no-textconv", "--no-color", "--no-renames", "--", ...paths.slice(i, i + 100)]);
+        if (r.code !== 0) continue;
+        for (const [path, text] of splitDiff(r.stdout)) out.set(path, out.has(path) ? `${out.get(path)}\n${text}` : text);
+      }
+    }
+    return out;
+  }
+
+  // Rule flags for files whose change is new since the last look; the rest keep theirs.
+  async updateFlags(git, files, against, hasHead, root, on) {
+    const fresh = await this.readFresh(files, root, on);
+    const subjects = new Set(files.filter((f) => isTest(f.path) && testsChangedCode(f.path, files)).map((f) => f.path));
+    const stamp = (f) => `${this.sig(f)}:${f.binary ? "b" : ""}:${subjects.has(f.path) ? "t" : ""}`;
+    const todo = files.filter((f) => this.flags.get(f.path)?.stamp !== stamp(f)).slice(0, 400);
+    const needDiff = todo.filter((f) => !f.binary && pathFlags(f)[0]?.level !== "skim");
+    const diffs = await this.trackedDiffs(git, needDiff, against, hasHead, 0);
+    for (const f of todo) {
+      const text = fresh.get(f.path) ?? diffs.get(f.path);
+      const flags = [...pathFlags(f), ...(needDiff.includes(f) && text ? diffFlags(f, text, subjects.has(f.path)) : [])];
+      this.flags.set(f.path, { stamp: stamp(f), flags });
+    }
+  }
+
+  // Asks the model about every file it has not judged in its current state, then shows the files by risk.
+  triage(cx) {
+    if (!this.root || this.triaging) return;
+    this.setView("risk");
+    const judge = this.untriaged();
+    if (!judge.length) { cx.notify(); return; }
+    const root = this.root, on = this.on, store = this.triageKey(), all = [...this.files], against = this.against ?? "HEAD", hasHead = this.hasHead;
+    const sigs = new Map(judge.map((f) => [f.path, this.sig(f)]));
+    const model = this.modelId, effort = this.effortId;
+    this.triaging = true; this.note = null; cx.notify();
+    cx.spawn(async (cx) => {
+      try {
+        const git = (args) => exec("git", [...READ, ...args], { cwd: root, on });
+        const diffs = new Map([...await this.trackedDiffs(git, judge, against, hasHead, 3), ...await this.readFresh(judge, root, on)]);
+        const prompt = triagePrompt(all, judge, diffs, (f) => this.flagsOf(f));
+        const r = await exec("claude", ["-p", "--output-format", "json", "--tools", "", "--no-session-persistence", "--json-schema", VERDICT_SCHEMA, ...(model !== "default" ? ["--model", model] : []), ...(effort !== "default" ? ["--effort", effort] : []), "--", prompt], { cwd: root, on, timeout: 600000 });
+        if (!r.stdout.trim()) throw new Error(r.stderr.trim() || "No answer came back.");
+        const out = JSON.parse(r.stdout);
+        if (r.code !== 0 || out.is_error) throw new Error(String(out.result || r.stderr || "The triage failed."));
+        const list = out.structured_output?.files ?? JSON.parse(out.result).files;
+        let saved = {};
+        try { saved = JSON.parse(this.read(store) ?? "{}") || {}; } catch { saved = {}; }
+        for (const path of Object.keys(saved)) if (!all.some((f) => f.path === path)) delete saved[path];
+        for (const v of list) if (sigs.has(v.path) && LEVELS.includes(v.level)) saved[v.path] = { level: v.level, reason: String(v.reason ?? "").trim(), sig: sigs.get(v.path) };
+        this.write(store, JSON.stringify(saved));
+        if (this.root === root && this.triageKey() === store) this.verdicts = saved;
+      } catch (e) { if (this.root === root) this.note = `Triage failed: ${String(e.message ?? e).slice(0, 300)}`; }
+      finally { this.triaging = false; cx.notify(); }
+    });
+  }
+
+  // The rule flags then the model's reason, as one line of text.
+  whyText(f) {
+    const verdict = this.verdictOf(f);
+    return { flags: this.flagsOf(f), reason: verdict ? verdict.reason : this.verdicts[f.path] ? "changed since triage" : "" };
+  }
+
+  listRow(row, t) {
+    if (row.kind === "dir") return this.dirRow(row.dir, t, row.depth, row.fold ?? "");
+    if (row.kind === "group") return this.groupRow(row, t);
+    if (row.kind === "note") return div().h(ROW_H.note).flex_none().px(10).flex().items_center().text_size(11).text_color(t.working).child(`⚑ ${row.text}`);
+    return this.fileRow(row.f, t, row.depth, this.view);
+  }
+
+  rowHeight(row) { return row.kind === "file" ? (this.view === "risk" ? ROW_H.risk : ROW_H.file) : ROW_H[row.kind]; }
+
+  // A tinted band with a bar in the level's colour, so the three groups read apart at a glance.
+  groupRow(row, t) {
+    const done = row.files.filter((f) => this.reviewed(f)).length, id = `risk:${row.level}`, open = !this.foldedDirs.has(id);
+    const tone = t[LEVEL_TONE[row.level]];
+    return h_flex().id(`group-${row.level}`).h(ROW_H.group - 6).mt(6).flex_none().pl(0).pr(10).gap(8).items_center().rounded(6).overflow_hidden().cursor_pointer()
+      .bg(fade(tone, "1f")).hover((s) => s.bg(fade(tone, "33")))
+      .on_click((_e, cx) => this.toggleDir(id, cx))
+      .child(div().w(3).h_full().flex_none().bg(tone))
+      .child(div().w(12).flex_none().text_size(10).text_color(tone).text_center().child(open ? "▾" : "▸"))
+      .child(div().flex_1().min_w(0).truncate().text_size(12.5).font_semibold().text_color(tone).child(LEVEL_LABEL[row.level]))
+      .child(div().flex_none().text_size(11).text_color(done === row.files.length ? t.ansi2 : t.foreground).child(`${done}/${row.files.length} reviewed`));
+  }
 
   toggleDir(path, cx) {
     if (this.foldedDirs.has(path)) this.foldedDirs.delete(path); else this.foldedDirs.add(path);
     cx.notify();
   }
 
-  fileRow(f, t, depth, tree) {
-    const parts = f.path.split("/"), name = parts.pop();
-    return h_flex().id(`change-${f.path}`).h(28).flex_none().pl(8 + depth * 16).pr(8).gap(8).items_center().rounded(7).cursor_pointer().when(this.open === f.path, (e) => e.bg(t.selected)).hover((s) => s.bg(t.hover)).on_click((_e, cx) => this.pick(f.path, cx))
+  // A flag count in the tree and list; the Risk view spells the flags and the reason out under the name instead.
+  flagTag(f, t) {
+    const shown = this.flagsOf(f).filter((x) => x.level !== "skim");
+    if (!shown.length) return null;
+    return div().id(`flags-${f.path}`).flex_none().text_size(10).text_color(shown.some((x) => x.level === "high") ? t.blocked : t.muted)
+      .tooltip(shown.map((x) => x.text).join("\n")).child(`⚑ ${shown.length}`);
+  }
+
+  whyLine(f, t) {
+    const { flags, reason } = this.whyText(f);
+    const tip = [...flags.map((x) => x.text), reason].filter(Boolean).join("\n");
+    const settled = Boolean(reason) && reason !== "changed since triage";
+    return h_flex().id(`why-${f.path}`).h(16).pl(46).gap(6).min_w(0).overflow_hidden().text_size(11.5).whitespace_nowrap()
+      .when(Boolean(tip), (e) => e.tooltip(tip))
+      .children(flags.map((x) => div().flex_none().text_color(x.level === "high" ? t.blocked : t.muted).child(`⚑ ${x.text}`)))
+      .child(div().min_w(0).truncate().text_color(settled ? fade(t.foreground, "c8") : t.dim).child(reason || (flags.length ? "" : "not triaged yet")));
+  }
+
+  fileRow(f, t, depth, view) {
+    const parts = f.path.split("/"), name = parts.pop(), tree = view !== "list", risk = view === "risk";
+    const tag = risk ? null : this.flagTag(f, t);
+    const line = h_flex().h(ROW_H.file).flex_none().gap(8).items_center()
       .child(div().id(`reviewed-${f.path}`).size(16).flex_none().rounded(4).border_1().border_color(this.reviewed(f) ? t.ansi2 : t.border)
         .when(this.reviewed(f), (e) => e.bg(t.ansi2 + "30")).flex().items_center().justify_center().cursor_pointer()
         .on_click((_e, cx) => { cx.stop_propagation(); this.toggleReviewed(f.path, cx); })
         .when(this.reviewed(f), (e) => e.child(svg("mods/workspace-chrome/check.svg").size(11).text_color(t.ansi2))))
       .child(div().w(14).text_size(11).text_color(f.status === "A" ? t.ansi2 : f.status === "D" ? t.ansi1 : f.status === "U" ? t.ansi1 : t.blocked).child(f.status))
       .child(h_flex().flex_1().min_w(0).when(!tree, (e) => e.child(div().text_color(t.dim).truncate().child(parts.length ? parts.join("/") + "/" : ""))).child(div().max_w(260).min_w(0).truncate().text_color(this.reviewed(f) ? t.dim : t.foreground).child(name)))
+      .when(Boolean(tag), (e) => e.child(tag))
       .when(this.chat.messages.some((m) => m.path === f.path), (e) => e.child(div().id(`asked-${f.path}`).text_size(10).text_color(t.accent).tooltip("Questions you asked the chat about this file").child(`${this.chat.messages.filter((m) => m.path === f.path).length} asked`)))
       .when(this.stale(f), (e) => e.child(div().text_size(10).text_color(t.blocked).child("changed")))
       .when(f.add > 0, (e) => e.child(div().text_size(11).text_color(t.ansi2).child(`+${f.add}`))).when(f.del > 0, (e) => e.child(div().text_size(11).text_color(t.ansi1).child(`\u2212${f.del}`)));
+    return v_flex().id(`change-${f.path}`).h(risk ? ROW_H.risk : ROW_H.file).flex_none().pl(8 + depth * 16).pr(8).rounded(7).cursor_pointer()
+      .when(this.open === f.path, (e) => e.bg(t.selected)).hover((s) => s.bg(t.hover)).on_click((_e, cx) => this.pick(f.path, cx))
+      .child(line).when(risk, (e) => e.child(this.whyLine(f, t)));
   }
 
-  dirRow(dir, t, depth) {
+  // Above the open file's diff: why it sorted where it did.
+  whyBanner(f, t) {
+    const { flags, reason } = this.whyText(f);
+    if (!flags.length && !reason) return null;
+    const level = this.levelFor(f);
+    return h_flex().flex_none().px(12).py(5).gap(6).flex_wrap().items_center().border_b(1).border_color(t.border).text_size(11.5)
+      .child(div().flex_none().font_semibold().text_color(t[LEVEL_TONE[level]]).child(LEVEL_LABEL[level]))
+      .children(flags.map((x) => div().text_color(x.level === "high" ? t.blocked : t.dim).child(`\u00b7 \u2691 ${x.text}`)))
+      .when(Boolean(reason), (e) => e.child(div().text_color(t.foreground).child(`\u00b7 ${reason}`)));
+  }
+
+  // fold: the key prefix of the Risk group this folder sits in ("" in the Tree view).
+  dirRow(dir, t, depth, fold = "") {
     const inside = treeFiles(dir), done = inside.filter((f) => this.reviewed(f)).length;
     const add = inside.reduce((n, f) => n + f.add, 0), del = inside.reduce((n, f) => n + f.del, 0);
-    const open = !this.foldedDirs.has(dir.path);
-    return h_flex().id(`dir-${dir.path}`).h(26).flex_none().pl(8 + depth * 16).pr(8).gap(6).items_center().rounded(7).cursor_pointer().hover((s) => s.bg(t.hover))
-      .on_click((_e, cx) => this.toggleDir(dir.path, cx))
+    const open = !this.foldedDirs.has(fold + dir.path);
+    return h_flex().id(`dir-${fold}${dir.path}`).h(26).flex_none().pl(8 + depth * 16).pr(8).gap(6).items_center().rounded(7).cursor_pointer().hover((s) => s.bg(t.hover))
+      .on_click((_e, cx) => this.toggleDir(fold + dir.path, cx))
       .child(div().w(16).flex_none().text_size(10).text_color(t.dim).text_center().child(open ? "\u25be" : "\u25b8"))
       .child(div().flex_1().min_w(0).truncate().text_size(12).text_color(t.muted).child(`${dir.name}/`))
       .child(div().text_size(10).text_color(done === inside.length ? t.ansi2 : t.dim).child(`${done}/${inside.length}`))
@@ -568,7 +743,7 @@ export default class Changes extends View {
     if (this.loading || this.busy) { this.pending = true; return; }
     const { cwd, on } = location(), context = key();
     if (context !== this.context) {
-      this.context = context; this.root = null; this.files = []; this.open = null; this.tests = null; this.base = null; this.baseAt = 0;
+      this.context = context; this.root = null; this.files = []; this.open = null; this.tests = null; this.base = null; this.baseAt = 0; this.verdicts = {};
       this.setLines([]); this.error = null; this.note = null; this.watched = null; this.closed = false; this.limited = false;
     }
     if (!cwd) return;
@@ -618,7 +793,10 @@ export default class Changes extends View {
             files.push({ path, status: st, fresh, ...(stats[path] ?? { add: 0, del: 0 }) });
           }
         }
-        this.loadMarks();
+        if (this.flagsFor !== `${root}|${against}`) { this.flagsFor = `${root}|${against}`; this.flags = new Map(); }
+        try { await this.updateFlags(git, files, against, head.code === 0, root, on); } catch { /* flags are a hint; the list still shows */ }
+        if (key() !== context) return;
+        this.loadMarks(); this.loadVerdicts();
         if (this.threadsRoot !== root) { this.threadsRoot = root; this.loadChat(); }
         if (key() !== context) return;
         this.on = on; this.hasHead = head.code === 0; this.files = files; this.limited = entries.length > 1000; this.error = null;
@@ -677,7 +855,7 @@ export default class Changes extends View {
   pick(path, cx, force = false) {
     this.sel = null;
     this.open = this.open === path && !force ? null : path;
-    if (this.open) for (const dir of [...this.foldedDirs]) if (this.open.startsWith(`${dir}/`)) this.foldedDirs.delete(dir);
+    if (this.open) for (const dir of [...this.foldedDirs]) if (this.open.startsWith(`${dir.slice(dir.indexOf("|") + 1)}/`)) this.foldedDirs.delete(dir);
     if (this.open) { this.scrollThreads = true; this.lastPath = this.open; this.write(this.lastKey(), JSON.stringify({ path: this.open, range: this.range })); } this.setLines([]); this.note = null;
     this.closed = !this.open;
     const context = this.context;
@@ -763,8 +941,11 @@ export default class Changes extends View {
     if (props()?.menu) return this.menuView(theme());
     if (key() !== this.context) this.refresh(cx);
     const t = theme(), add = this.files.reduce((n, f) => n + f.add, 0), del = this.files.reduce((n, f) => n + f.del, 0);
-    const openFile = this.files.find((f) => f.path === this.open);
-    const listRows = this.view === "tree" ? treeRows(fileTree(this.files), this.foldedDirs) : this.files.map((f) => ({ kind: "file", f, depth: 0 }));
+    const openFile = this.files.find((f) => f.path === this.open), banner = openFile ? this.whyBanner(openFile, t) : null;
+    const listRows = this.view === "tree" ? treeRows(fileTree(this.files), this.foldedDirs) : this.view === "risk" ? this.riskRows() : this.files.map((f) => ({ kind: "file", f, depth: 0 }));
+    const listFit = listRows.reduce((n, row) => n + this.rowHeight(row), 12);
+    const untriaged = this.untriaged().length, judged = Object.keys(this.verdicts).length > 0;
+    const showTriage = this.files.length > 0 && (this.triaging || untriaged > 0 || this.view !== "risk");
     const splitting = this.mode === "split";
     if (splitting) this.layoutSplit();
     const reviewedCount = this.files.filter((f) => this.reviewed(f)).length;
@@ -784,8 +965,15 @@ export default class Changes extends View {
         .child(div().font_semibold().child("Changes"))
         .child(div().px(5).py(1).rounded(4).border_1().border_color(t.border).text_size(10).text_color(t.muted).child(`${this.files.length} files`))
         .child(div().id("view-toggle").px(6).h(20).flex().items_center().rounded(5).bg(t.raised).text_size(11).text_color(t.muted).cursor_pointer()
-          .hover((h) => h.bg(t.hover).text_color(t.foreground)).tooltip(this.view === "tree" ? "Show a flat list" : "Show a folder tree")
-          .on_click((_e, cx) => { this.setView(this.view === "tree" ? "list" : "tree"); cx.notify(); }).child(this.view === "tree" ? "Tree" : "List"))
+          .hover((h) => h.bg(t.hover).text_color(t.foreground)).tooltip({ tree: "Folder tree. Click for a flat list", list: "Flat list. Click to sort by risk", risk: "By risk. Click for the folder tree" }[this.view])
+          .on_click((_e, cx) => { this.setView(VIEWS[(VIEWS.indexOf(this.view) + 1) % VIEWS.length]); cx.notify(); }).child(VIEW_LABEL[this.view]))
+        .when(showTriage, (e) => e.child(h_flex().id("triage").px(7).h(20).gap(5).items_center().rounded(5).text_size(11)
+          .bg(this.triaging ? t.raised : t.accent + "30").text_color(this.triaging ? t.working : t.foreground)
+          .when(!this.triaging, (b) => b.cursor_pointer().hover((h) => h.bg(t.accent + "50")))
+          .tooltip("Sort the files by how closely to read them, with a reason for each. Nothing is hidden: every file still needs its review tick")
+          .on_click((_e, cx) => this.triage(cx))
+          .when(this.triaging, (b) => b.child(svg("mods/workspace-chrome/spinner.svg").size(11).flex_none().text_color(t.working).spin(900)))
+          .child(this.triaging ? "Triaging…" : judged && untriaged > 0 ? `Triage ${untriaged} more` : "Triage")))
         .child(div().flex_1()).child(div().text_size(11).text_color(t.ansi2).child(`+${add}`)).child(div().text_size(11).text_color(t.ansi1).child(`−${del}`)))
       .child(h_flex().h(36).flex_none().px(10).gap(4).items_center().border_b(1).border_color(t.border)
         .child(seg("range-work", "Uncommitted", this.range === "work", true, (_e, cx) => this.setRange("work", cx)))
@@ -796,9 +984,9 @@ export default class Changes extends View {
       // overflow_y_scrollbar() wraps the list, so its flex sizing never reached the panel's layout.
       .child(div().id("changes-list-box").min_h(44).relative()
         .when(this.listH > 0, (e) => e.flex_none().h(clamp(this.listH, 44, Math.max(44, this.panelH - 200))))
-        .when(!this.listH, (e) => e.flex_1().max_h(listRows.length * 28 + 12))
+        .when(!this.listH, (e) => e.flex_1().max_h(listFit))
         .on_size_change((size, cx) => { if (Math.abs(size.height - this.listSeen) > 1) { this.listSeen = size.height; cx.notify(); } })
-        .child(v_flex().id("changes-list").absolute().inset_0().overflow_y_scroll().p(6).children(listRows.map((row) => row.kind === "dir" ? this.dirRow(row.dir, t, row.depth) : this.fileRow(row.f, t, row.depth, this.view === "tree"))).when(!this.files.length, (e) => e.child(div().p(8).text_color(t.dim).child(this.error || (this.loading ? "Loading changes…" : this.root ? "No uncommitted changes" : "No folder")))))
+        .child(v_flex().id("changes-list").absolute().inset_0().overflow_y_scroll().p(6).children(listRows.map((row) => this.listRow(row, t))).when(!this.files.length, (e) => e.child(div().p(8).text_color(t.dim).child(this.error || (this.loading ? "Loading changes…" : this.root ? "No uncommitted changes" : "No folder")))))
         .child(Scrollbar.vertical("changes-list").absolute().inset_0()))
       .child(div().id("list-handle").w_full().h(7).flex_none().flex().items_center().cursor_row_resize().hover((h) => h.bg(t.hover))
         .tooltip("Drag to resize the file list; double-click to fit it to the files")
@@ -825,6 +1013,7 @@ export default class Changes extends View {
           .bg(openFile && this.reviewed(openFile) ? t.raised : t.solid).text_color(openFile && this.reviewed(openFile) ? t.muted : t.solid_foreground)
           .on_click((_e, cx) => this.toggleReviewed(this.open, cx, true))
           .child(openFile && this.reviewed(openFile) ? "Reviewed (undo)" : "Mark reviewed"))))
+      .when(Boolean(banner), (el) => el.child(banner))
       .child(v_flex().id("review-area").flex_1().min_h(0).relative()
         .on_size_change((size, cx) => { if (Math.abs(size.height - this.areaH) > 1) { this.areaH = size.height; cx.notify(); } })
         .on_mouse_down_out((_e, cx) => { if (this.sel) { this.sel = null; cx.notify(); } })
