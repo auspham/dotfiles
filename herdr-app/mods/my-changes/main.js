@@ -135,6 +135,7 @@ export default class Changes extends View {
     this.question.on("blur", (_e, cx) => { this.asking = false; cx.notify(); });
     this.view = this.read("view") === "list" ? "list" : "tree"; this.foldedDirs = new Set();
     this.sel = null; this.chat = { session: null, messages: [] }; this.hasQuestion = false; this.threadScroll = ScrollHandle.new(); this.scrollThreads = false; this.threadH = clamp(Number(this.read("threadH")) || 240, 90, 900); this.areaH = 700; this.vdrag = null;
+    this.listH = Number(this.read("listH")) || 0; this.listSeen = 200; this.panelH = 800; this.ldrag = null; // listH 0: as tall as its rows
     this.refresh(cx);
     cx.timer.every(10000, (cx) => this.refresh(cx));
     cx.timer.every(400, (cx) => this.applyFocus(cx));
@@ -153,6 +154,7 @@ export default class Changes extends View {
     else if (verb === "click" || verb === "shiftclick") this.pickRow(`${this.mode}${arg}`, verb === "shiftclick", cx);
     else if (verb === "threadh") { this.threadH = clamp(Number(arg) || 240, 90, 900); this.write("threadH", String(this.threadH)); }
     else if (verb === "view") this.setView(arg === "list" ? "list" : "tree");
+    else if (verb === "listh") { this.listH = Number(arg) || 0; this.write("listH", String(this.listH)); }
     else if (verb === "tests") this.runTests(cx);
     else if (verb === "zed") this.openInEditor(cx);
     else if (verb === "focus" && !arg) { this.handle.focus(); setShared("nav.focus", "changes"); }
@@ -769,7 +771,7 @@ export default class Changes extends View {
     const seg = (id, label, on, enabledSeg, click) => div().id(id).px(9).h(24).flex().items_center().rounded(6).text_size(12)
       .bg(on ? t.selected : t.background).text_color(on ? t.foreground : enabledSeg ? t.muted : t.dim)
       .when(enabledSeg, (e) => e.cursor_pointer().hover((h) => h.bg(on ? t.selected : t.hover))).on_click(enabledSeg ? click : () => {}).child(label);
-    return v_flex().id("changes").size_full().min_h(0).rounded(10).overflow_hidden().bg(t.background).border_1().border_color(this.holds() ? t.accent : t.border).text_color(t.foreground).text_size(13).track_focus(this.handle)
+    return v_flex().id("changes").relative().size_full().min_h(0).rounded(10).overflow_hidden().bg(t.background).border_1().border_color(this.holds() ? t.accent : t.border).text_color(t.foreground).text_size(13).track_focus(this.handle)
       .on_key_down((e, cx) => {
         if (e.key === "o" && !this.asking && !e.modifiers.control && !e.modifiers.alt && !e.modifiers.shift && this.open) { this.openInEditor(cx); cx.stop_propagation(); return; }
         if (e.key === "tab" && !this.asking && !e.modifiers.control && !e.modifiers.alt && !e.modifiers.shift) { this.question.focus(); cx.stop_propagation(); cx.notify(); return; }
@@ -792,9 +794,21 @@ export default class Changes extends View {
         .child(div().text_size(11).text_color(this.files.length && reviewedCount === this.files.length ? t.ansi2 : t.muted).child(`${reviewedCount}/${this.files.length} reviewed`)))
       .when(Boolean(this.tests && this.root), (e) => e.child(this.testsRow(t)))
       // overflow_y_scrollbar() wraps the list, so its flex sizing never reached the panel's layout.
-      .child(div().flex_1().min_h(44).max_h(listRows.length * 28 + 12).relative().border_b(1).border_color(t.border)
+      .child(div().id("changes-list-box").min_h(44).relative()
+        .when(this.listH > 0, (e) => e.flex_none().h(clamp(this.listH, 44, Math.max(44, this.panelH - 200))))
+        .when(!this.listH, (e) => e.flex_1().max_h(listRows.length * 28 + 12))
+        .on_size_change((size, cx) => { if (Math.abs(size.height - this.listSeen) > 1) { this.listSeen = size.height; cx.notify(); } })
         .child(v_flex().id("changes-list").absolute().inset_0().overflow_y_scroll().p(6).children(listRows.map((row) => row.kind === "dir" ? this.dirRow(row.dir, t, row.depth) : this.fileRow(row.f, t, row.depth, this.view === "tree"))).when(!this.files.length, (e) => e.child(div().p(8).text_color(t.dim).child(this.error || (this.loading ? "Loading changes…" : this.root ? "No uncommitted changes" : "No folder")))))
         .child(Scrollbar.vertical("changes-list").absolute().inset_0()))
+      .child(div().id("list-handle").w_full().h(7).flex_none().flex().items_center().cursor_row_resize().hover((h) => h.bg(t.hover))
+        .tooltip("Drag to resize the file list; double-click to fit it to the files")
+        .on_mouse_down("left", (ev, cx) => {
+          cx.stop_propagation();
+          if (ev.click_count === 2) { this.listH = 0; this.write("listH", "0"); }
+          else this.ldrag = { y: ev.position.y, h: this.listSeen };
+          cx.notify();
+        })
+        .child(div().w_full().h(1).bg(t.border)))
       .when(this.limited, el => el.child(div().px(12).py(4).text_size(11).text_color(t.dim).child("Showing the first 1,000 changed files")))
       .when(Boolean(openFile), (el) => el.child(h_flex().flex_none().h(36).px(12).gap(8).items_center().border_b(1).border_color(t.border)
         .child(div().flex_1().min_w(0).truncate().text_size(12).text_color(t.muted).child(this.open))
@@ -839,6 +853,10 @@ export default class Changes extends View {
         .when(Boolean(this.vdrag), (e) => e.child(div().id("threads-drag").absolute().inset_0().cursor_row_resize()
           .on_mouse_move((ev, cx) => { this.threadH = clamp(this.vdrag.h + (this.vdrag.y - ev.position.y), 90, Math.max(90, this.areaH - 140)); cx.notify(); })
           .on_mouse_up("left", (_ev, cx) => { this.vdrag = null; this.write("threadH", String(Math.round(this.threadH))); cx.notify(); }))))
-      .when(Boolean(this.note), (e) => e.child(div().px(10).pb(8).text_size(11).text_color(t.ansi1).child(this.note)));
+      .when(Boolean(this.note), (e) => e.child(div().px(10).pb(8).text_size(11).text_color(t.ansi1).child(this.note)))
+      .on_size_change((size, cx) => { if (Math.abs(size.height - this.panelH) > 1) { this.panelH = size.height; cx.notify(); } })
+      .when(Boolean(this.ldrag), (e) => e.child(div().id("list-drag").absolute().inset_0().cursor_row_resize()
+        .on_mouse_move((ev, cx) => { this.listH = clamp(this.ldrag.h + (ev.position.y - this.ldrag.y), 44, Math.max(44, this.panelH - 200)); cx.notify(); })
+        .on_mouse_up("left", (_ev, cx) => { this.ldrag = null; this.write("listH", String(Math.round(this.listH))); cx.notify(); })));
   }
 }
