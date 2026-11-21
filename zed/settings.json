@@ -197,7 +197,5 @@
   "inlay_hints": {
     "enabled": false,
   },
-  "preview": {
-    "lsp_results_location": "picker"
-  }
+  "lsp_results_location": "picker"
 }
