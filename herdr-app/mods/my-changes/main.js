@@ -70,7 +70,8 @@ const clamp = (n, lo, hi) => Math.min(hi, Math.max(lo, n));
 export default class Changes extends View {
   init(_props, cx) {
     if (props()?.menu) return;
-    this.files = []; this.rows = []; this.diffWidth = 0; this.handle = cx.focus_handle();
+    this.files = []; this.rows = []; this.diffWidth = 0; this.handle = cx.focus_handle(); this.hadFocus = false;
+    cx.timer.every(200, (cx) => { const on = this.holds(); if (on !== this.hadFocus) { this.hadFocus = on; cx.notify(); } });
     this.range = this.read("range") === "branch" ? "branch" : "work"; this.mode = this.read("mode") === "split" ? "split" : "unified"; this.split = []; this.half = 300; this.ratio = clamp(Number(this.read("ratio")) || 0.5, 0.15, 0.85); this.diffW = 800; this.splitVersion = 0; this.drag = false; this.heights = []; this.marks = {}; this.base = null;
     this.question = InputState.new({ placeholder: "Ask about this change" });
     this.question.on("change", (_e, cx) => { const has = Boolean(this.question.value().trim()); if (has !== this.hasQuestion) { this.hasQuestion = has; cx.notify(); } });
@@ -93,6 +94,7 @@ export default class Changes extends View {
     else if (verb === "expand") this.toggleExpand();
     else if (verb === "click" || verb === "shiftclick") this.pickRow(`${this.mode}${arg}`, verb === "shiftclick", cx);
     else if (verb === "threadh") { this.threadH = clamp(Number(arg) || 240, 90, 900); this.write("threadH", String(this.threadH)); }
+    else if (verb === "focus" && !arg) { this.handle.focus(); setShared("nav.focus", "changes"); }
     else if (verb === "focus") setShared("review.focus", { root: this.root, path: arg, space: spaces().find((sp) => sp.active)?.id, ts: Date.now() });
     else if (verb === "model" && MODELS.some(([id]) => id === arg)) setShared("review.askModel", arg);
     else if (verb === "effort" && EFFORTS.some(([id]) => id === arg)) setShared("review.askEffort", arg);
@@ -571,6 +573,8 @@ export default class Changes extends View {
     openOverlay({ mod: "my-changes", kind: "popup", width: 190, height, at, props: { menu: kind } });
   }
 
+  holds() { return this.handle.is_focused() && shared("nav.focus") === "changes"; }
+
   render(cx) {
     if (props()?.menu) return this.menuView(theme());
     if (key() !== this.context) this.refresh(cx);
@@ -582,8 +586,10 @@ export default class Changes extends View {
     const seg = (id, label, on, enabledSeg, click) => div().id(id).px(9).h(24).flex().items_center().rounded(6).text_size(12)
       .bg(on ? t.selected : t.background).text_color(on ? t.foreground : enabledSeg ? t.muted : t.dim)
       .when(enabledSeg, (e) => e.cursor_pointer().hover((h) => h.bg(on ? t.selected : t.hover))).on_click(enabledSeg ? click : () => {}).child(label);
-    return v_flex().id("changes").size_full().min_h(0).rounded(10).overflow_hidden().bg(t.background).border_1().border_color(t.border).text_color(t.foreground).text_size(13).track_focus(this.handle)
+    return v_flex().id("changes").size_full().min_h(0).rounded(10).overflow_hidden().bg(t.background).border_1().border_color(this.holds() ? t.accent : t.border).text_color(t.foreground).text_size(13).track_focus(this.handle)
       .on_key_down((e, cx) => {
+        const step = { down: "next", j: "next", up: "prev", k: "prev" }[e.key];
+        if (step && !this.typing && !this.asking && !e.modifiers.control && !e.modifiers.alt && !e.modifiers.shift) { this.command(step, cx); cx.stop_propagation(); cx.notify(); return; }
         if (e.key === "escape" && !this.typing && !this.asking && this.sel) { this.sel = null; cx.stop_propagation(); cx.notify(); return; }
         if (e.key === "escape" && (this.typing || this.asking)) { this.typing = false; this.asking = false; this.handle.focus(); cx.stop_propagation(); cx.notify(); }
       })

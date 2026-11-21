@@ -2,7 +2,7 @@
 
 import { View, div, image, svg } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
-import { agents, terminals, panes, focused, spaces, run, theme, shared, setShared, setAgentOrder, openOverlay, closeOverlay, props, window, layout } from "herdr";
+import { agents, nextCommand, terminals, panes, focused, spaces, run, theme, shared, setShared, setAgentOrder, openOverlay, closeOverlay, props, window, layout } from "herdr";
 
 function find(node, id) {
   if (node?.id === id) return node;
@@ -82,6 +82,10 @@ function icon(p, size, color) {
 export default class Agents extends View {
   init(_props, cx) {
     if (props()?.sortMenu) return;
+    this.handle = cx.focus_handle();
+    this.hadFocus = false;
+    cx.timer.every(200, (cx) => { const on = this.holds(); if (on !== this.hadFocus) { this.hadFocus = on; cx.notify(); } });
+    cx.spawn(async (cx) => { for (;;) { if ((await nextCommand()) === "focus") { this.handle.focus(); setShared("nav.focus", "agents"); } cx.notify(); } });
     this.folded = new Set();
     // Each agent's last state and when it changed (ms), kept across restarts.
     try { this.changed = JSON.parse(localStorage.getItem("changed") ?? "{}"); } catch { this.changed = {}; }
@@ -93,6 +97,7 @@ export default class Agents extends View {
     cx.timer.every(30000, (cx) => cx.notify());
     try { this.recent = JSON.parse(localStorage.getItem("recent") ?? "[]"); } catch { this.recent = []; }
     if (!Array.isArray(this.recent)) this.recent = [];
+    this.recent = this.recent.filter((e, i, all) => all.findIndex((x) => x.addr === e.addr) === i);
     this.lastStatus = new Map(); this.gone = new Map(); this.bootAt = Date.now();
     cx.timer.every(500, (cx) => this.trackEvents(cx));
   }
@@ -174,19 +179,19 @@ export default class Agents extends View {
     let dirty = false;
     const open = (addr, kind) => this.recent.find((e) => e.addr === addr && e.kind === kind && e.state === "open");
     const close = (addr, kind) => { for (const e of this.recent) if (e.addr === addr && e.kind === kind && e.state === "open") { e.state = "seen"; e.closed = now; dirty = true; } };
+    // One entry per agent: its newest event replaces the older ones.
+    const add = (e) => { this.recent = [e, ...this.recent.filter((x) => x.addr !== e.addr)]; dirty = true; };
     const list = agents(), present = new Set(list.map((a) => a.address));
     for (const a of list) {
       const before = this.lastStatus.get(a.address);
       this.lastStatus.set(a.address, a.status);
       if (before === a.status) continue;
       if ((a.status === "blocked" || a.status === "done") && !open(a.address, a.status)) {
-        this.recent.unshift({ id: `${a.address}:${a.status}:${now}`, addr: a.address, kind: a.status, at: now, state: "open", name: a.space_name || a.address });
-        dirty = true;
+        add({ id: `${a.address}:${a.status}:${now}`, addr: a.address, kind: a.status, at: now, state: "open", name: a.space_name || a.address });
       }
       // Finished while you were looking: the app skips "done", so note it straight away as already seen.
       if (before === "working" && a.status === "idle") {
-        this.recent.unshift({ id: `${a.address}:done:${now}`, addr: a.address, kind: "done", at: now, state: "seen", closed: now, name: a.space_name || a.address });
-        dirty = true;
+        add({ id: `${a.address}:done:${now}`, addr: a.address, kind: "done", at: now, state: "seen", closed: now, name: a.space_name || a.address });
       }
       if (before === "blocked" && a.status !== "blocked") close(a.address, "blocked");
       if (before === "done" && a.status !== "done") close(a.address, "done");
@@ -280,12 +285,15 @@ export default class Agents extends View {
     return div().size(7).mx(3).flex_none().rounded(4).bg(a.status === "done" ? color : t.dim + "00");
   }
 
+  holds() { return this.handle.is_focused() && shared("nav.focus") === "agents"; }
+
   render(cx) {
     const t = theme();
     if (props()?.sortMenu) return this.sortMenu(t);
     const collapsed = narrow();
     const sort = sortOf();
     let list = agents();
+    this.order = [];
     this.listed = new Map(list.map((a) => [a.address, a.status]));
     const all = terminals();
     this.migratePins(all);
@@ -380,6 +388,7 @@ export default class Agents extends View {
       const pic = icon(a.program, 16, t.foreground);
       const more = detail.get(a.address);
       // An agent on another machine (`vps/t7`) says which.
+      this.order.push(a.address);
       const machine = a.address.includes("/") ? a.address.split("/")[0] : null;
       if (collapsed) {
         return h_flex()
@@ -429,6 +438,7 @@ export default class Agents extends View {
         .gap(9)
         .when(shownAs.status === "blocked" && asTree, (el) => el.bg(t.blocked + "1f"))
         .when(a.focused, (el) => el.bg(t.selected))
+        .when(this.holds() && this.cur === a.address, (el) => el.border_1().border_color(t.accent))
         .cursor_pointer()
         .hover((s) => s.bg(t.hover))
         .on_hover((on, cx) => {
@@ -524,6 +534,7 @@ export default class Agents extends View {
     const byAddress = new Map(agents().map((a) => [a.address, a]));
     const open = this.recent.filter((e) => e.state === "open"), closed = this.recent.filter((e) => e.state !== "open");
     const events = [...open.slice(0, 6), ...closed.slice(0, Math.max(0, 8 - Math.min(open.length, 6)) ? 3 : 0)].slice(0, 8);
+    this.order = [...events.map((e) => `recent:${e.id}`), ...this.order];
     const recentEl = v_flex().flex_none().px(8).pb(6).border_b(1).border_color(t.border)
       .child(h_flex().h(28).px(8).items_center().text_size(11.5).font_medium().text_color(t.dim)
         .child(div().child(open.length ? `Recent \u00b7 ${open.length} to see` : "Recent"))
@@ -537,6 +548,7 @@ export default class Agents extends View {
           ? div().flex_none().px(6).h(18).flex().items_center().rounded(5).text_size(10.5).font_semibold().bg(live ? t.blocked + "26" : t.raised).text_color(live ? t.blocked : t.dim).child(live ? "needs you" : "answered")
           : h_flex().flex_none().gap(5).items_center().text_size(11).text_color(live ? t.done : t.dim).child(live ? "finished" : "seen").when(live, (el) => el.child(div().size(6).rounded(3).bg(t.done)));
         return h_flex().id(`recent-${e.id}`).h(28).flex_none().px(8).gap(8).rounded(7).items_center().cursor_pointer().hover((h) => h.bg(t.hover))
+          .when(this.holds() && this.cur === `recent:${e.id}`, (el) => el.border_1().border_color(t.accent))
           .on_click((_e, cx) => this.goTo(e, agent, cx))
           .child(div().w(14).flex_none().when(Boolean(pic), (el) => el.child(pic)))
           .child(div().flex_1().min_w(0).truncate().text_color(live ? t.foreground : t.dim).child(label))
@@ -545,6 +557,22 @@ export default class Agents extends View {
       }));
 
     return v_flex()
+      
+      .track_focus(this.handle).on_key_down((e, cx) => {
+        if (e.modifiers.control || e.modifiers.alt || e.modifiers.shift) return;
+        const order = this.order ?? [];
+        const at = order.indexOf(this.cur);
+        const step = { down: 1, j: 1, up: -1, k: -1 }[e.key];
+        if (step) this.cur = order[Math.max(0, Math.min(order.length - 1, at < 0 ? (step > 0 ? 0 : order.length - 1) : at + step))];
+        else if ((e.key === "enter" || e.key === "space") && this.cur) {
+          const ev = this.recent.find((x) => `recent:${x.id}` === this.cur);
+          if (ev) this.goTo(ev, agents().find((a) => a.address === ev.addr), cx);
+          else run("pane.focus", { pane: agents().find((a) => a.address === this.cur)?.pane });
+        }
+        else return;
+        cx.stop_propagation();
+        cx.notify();
+      })
       .size_full()
       .min_h(0)
       .bg(t.chrome)
@@ -561,7 +589,7 @@ export default class Agents extends View {
             .flex_none()
             .items_center()
             .justify_between()
-            .child(div().text_size(11.5).font_medium().text_color(t.dim).child("Agents"))
+            .child(div().text_size(11.5).font_medium().px(7).py(2).rounded(5).when(this.holds(), (h) => h.bg(t.accent + "30")).text_color(this.holds() ? t.accent : t.dim).child("Agents"))
             .child(
               div()
                 .id("ag-sort")

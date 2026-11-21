@@ -5,7 +5,7 @@
 
 import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex, ScrollHandle } from "gpui-base";
-import { agents, spaces, machines, panes, run, openOverlay, exec, hc, theme, shared, setShared, watchFolder, window, layout } from "herdr";
+import { agents, nextCommand, spaces, machines, panes, run, openOverlay, exec, hc, theme, shared, setShared, watchFolder, window, layout } from "herdr";
 
 function find(node, id) {
   if (node?.id === id) return node;
@@ -64,6 +64,10 @@ export function tone(t, status) {
 
 export default class Spaces extends View {
   init(_props, cx) {
+    this.handle = cx.focus_handle();
+    this.hadFocus = false;
+    cx.timer.every(200, (cx) => { const on = this.holds(); if (on !== this.hadFocus) { this.hadFocus = on; cx.notify(); } });
+    cx.spawn(async (cx) => { for (;;) { if ((await nextCommand()) === "focus") { this.handle.focus(); setShared("nav.focus", "spaces"); } cx.notify(); } });
     this.git = {}; // where() -> { name, branch, ahead, behind, repo, linked }, null: not a repo
     this.checked = {}; // where() -> when it was last looked at
     this.unsure = new Set(); // where()s git couldn't answer for (a machine away)
@@ -338,6 +342,8 @@ export default class Spaces extends View {
   // The rows, under a header per machine once one isn't this computer.
   grouped(t, collapsed) {
     const rows = this.ordered();
+    this.order = rows.map((r) => r.w.id);
+    if (!this.cur || !this.order.includes(this.cur)) this.cur = spaces().find((s) => s.active)?.id;
     const draw = (r) => (collapsed ? this.compact(r, t) : this.row(r, t));
     // Where the active space's row lands among the children this returns: the list scrolls by its direct
     // children, and machine headers, login notes and loading rows count too.
@@ -467,6 +473,7 @@ export default class Spaces extends View {
       .justify_center()
       .rounded(8)
       .when(on, (el) => el.bg(t.selected))
+      .when(this.holds() && this.cur === w.id, (el) => el.border_1().border_color(t.accent))
       .when(!on, (el) => el.hover((s) => s.bg(t.hover)))
       .when(this.pressed === w.id && this.over !== w.id, (el) => el.opacity(0.5))
       .when(this.pressed !== null && this.over === w.id && this.pressed !== w.id, (el) => el.child(
@@ -526,6 +533,8 @@ export default class Spaces extends View {
       .child(div().absolute().right(5).text_color(tone(t, w.status)).child(glyph(w.status))));
   }
 
+  holds() { return this.handle.is_focused() && shared("nav.focus") === "spaces"; }
+
   render() {
     const t = theme();
     const collapsed = narrow();
@@ -550,9 +559,20 @@ export default class Spaces extends View {
       if (this.activeAt >= 0) this.scroll.scroll_to_item(this.activeAt);
     }
     return v_flex().size_full().min_h(0).bg(t.chrome).text_size(13)
+      .track_focus(this.handle).on_key_down((e, cx) => {
+        if (e.modifiers.control || e.modifiers.alt || e.modifiers.shift) return;
+        const order = this.order ?? [];
+        const at = order.indexOf(this.cur);
+        const step = { down: 1, j: 1, up: -1, k: -1 }[e.key];
+        if (step) this.cur = order[Math.max(0, Math.min(order.length - 1, at < 0 ? (step > 0 ? 0 : order.length - 1) : at + step))];
+        else if ((e.key === "enter" || e.key === "space") && this.cur) run("space.select", { id: this.cur })
+        else return;
+        cx.stop_propagation();
+        cx.notify();
+      })
       .child(h_flex().h(31).pl(16).pr(10).items_center().justify_between().text_size(11.5).text_color(t.dim)
         .when(collapsed, el => el.pl(0).pr(0).justify_center())
-        .when(!collapsed, el => el.child("Spaces"))
+        .when(!collapsed, el => el.child(div().font_medium().px(7).py(2).rounded(5).when(this.holds(), (h) => h.bg(t.accent + "30")).text_color(this.holds() ? t.accent : t.dim).child("Spaces")))
         .child(div().id("space-new").size(26).flex_none().flex().items_center().justify_center().rounded(6).hover(s => s.bg(t.hover).text_color(t.foreground))
           .on_click(() => run("space.new")).child(svg("mods/workspace-chrome/plus.svg").size(14))))
       .child(v_flex().flex_1().min_h(0).px(collapsed ? 0 : 8).pb(14).overflow_y_scrollbar().mode("always").track_scroll(this.scroll)
