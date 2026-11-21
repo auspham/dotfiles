@@ -64,7 +64,17 @@ const CHAR = 6.7, NUMBER_W = 30, GAP = 10, EDGE = 10, LINE_H = 20;
 const FENCE = "`".repeat(3);
 const MODELS = [["default", "Default"], ["fable", "Fable"], ["opus", "Opus"], ["sonnet", "Sonnet"], ["haiku", "Haiku"]];
 const EFFORTS = [["default", "Default"], ["low", "Low"], ["medium", "Medium"], ["high", "High"], ["xhigh", "XHigh"], ["max", "Max"]];
-const ASK_TOOLS = "Read,Grep,Glob,Bash(git diff:*),Bash(git log:*),Bash(git show:*),Bash(git status:*),Bash(git blame:*),Bash(git branch:*)";
+// A conversation started under an older role (read-only) keeps refusing to edit, so it starts over.
+const ASK_ROLE = "edit-tests";
+const ASK_TOOLS = "Read,Grep,Glob,Edit,MultiEdit,Write,Bash(git diff:*),Bash(git log:*),Bash(git show:*),Bash(git status:*),Bash(git blame:*),Bash(git branch:*)";
+// Runs the project's tests and records the result where the panel reads it; the chat may run only this.
+const testScript = () => `${home()}/.config/herdr-app/mods/my-changes/run-tests.sh`;
+// A run that never finished (its process was killed) stops counting as running after the script's own timeout.
+const RUN_LIMIT_MS = 16 * 60000;
+const duration = (ms) => {
+  const m = Math.max(0, Math.floor(ms / 60000));
+  return m < 1 ? "just now" : m < 60 ? `${m}m` : m < 1440 ? `${Math.floor(m / 60)}h` : `${Math.floor(m / 1440)}d`;
+};
 const clamp = (n, lo, hi) => Math.min(hi, Math.max(lo, n));
 
 export default class Changes extends View {
@@ -73,7 +83,7 @@ export default class Changes extends View {
     this.files = []; this.rows = []; this.diffWidth = 0; this.handle = cx.focus_handle(); this.hadFocus = false;
     cx.timer.every(200, (cx) => { const on = this.holds(); if (on !== this.hadFocus) { this.hadFocus = on; cx.notify(); } });
     this.range = this.read("range") === "branch" ? "branch" : "work"; this.mode = this.read("mode") === "split" ? "split" : "unified"; this.split = []; this.half = 300; this.ratio = clamp(Number(this.read("ratio")) || 0.5, 0.15, 0.85); this.diffW = 800; this.splitVersion = 0; this.drag = false; this.heights = []; this.marks = {}; this.base = null;
-    this.question = InputState.new({ placeholder: "Ask about this change" });
+    this.question = InputState.new({ placeholder: "Ask about this change, or ask for a fix" });
     this.question.on("change", (_e, cx) => { const has = Boolean(this.question.value().trim()); if (has !== this.hasQuestion) { this.hasQuestion = has; cx.notify(); } });
     this.question.on("submit", (_e, cx) => this.ask("inline", cx));
     this.question.on("focus", (_e, cx) => { this.asking = true; cx.notify(); });
@@ -83,6 +93,8 @@ export default class Changes extends View {
     cx.timer.every(10000, (cx) => this.refresh(cx));
     cx.timer.every(400, (cx) => this.applyFocus(cx));
     cx.spawn(async (cx) => { for (;;) { this.command(await nextCommand(), cx); cx.notify(); } });
+    // The chat runs tests too; watch for its runs while it answers.
+    cx.timer.every(3000, (cx) => { if (this.root && (this.testsRunning() || this.chat.messages.some((m) => m.status === "pending"))) this.loadTests(cx); });
   }
 
   // `herdr-app do my-changes.<command>`, and what a key binding can send: range:work, range:branch, next, prev, mark, open:<path>
@@ -94,6 +106,8 @@ export default class Changes extends View {
     else if (verb === "expand") this.toggleExpand();
     else if (verb === "click" || verb === "shiftclick") this.pickRow(`${this.mode}${arg}`, verb === "shiftclick", cx);
     else if (verb === "threadh") { this.threadH = clamp(Number(arg) || 240, 90, 900); this.write("threadH", String(this.threadH)); }
+    else if (verb === "tests") this.runTests(cx);
+    else if (verb === "zed") this.openInEditor(cx);
     else if (verb === "focus" && !arg) { this.handle.focus(); setShared("nav.focus", "changes"); }
     else if (verb === "focus") setShared("review.focus", { root: this.root, path: arg, space: spaces().find((sp) => sp.active)?.id, ts: Date.now() });
     else if (verb === "model" && MODELS.some(([id]) => id === arg)) setShared("review.askModel", arg);
@@ -267,7 +281,7 @@ export default class Changes extends View {
       const log = id ? (await exec("sh", ["-c", 'ls "$HOME"/.claude/projects/*/"$1".jsonl 2>/dev/null | head -1', "sh", id]).then((r) => r.stdout.trim()).catch(() => "")) : "";
       lines.push(`- ${t.address} "${t.title || "agent"}" (${t.status?.state ?? "unknown"}), working in ${t.foreground?.cwd ?? t.cwd}${log ? `, its conversation log: ${log}` : ""}`);
     }
-    return `You are the read-only review assistant for the project at ${this.root}. The user is reviewing code that coding agents wrote and asks you about it. Answer by reading the code and, when asked why something was done, the agents' own conversation logs listed below (JSONL files). Use git only to read: diff, log, show, status, blame. Never edit files and never run anything else. Be concise and point at file and line.\n\nAgents in this space right now:\n${lines.join("\n") || "- none"}`;
+    return `You are the review assistant for the project at ${this.root}. The user is reviewing code that coding agents wrote. Answer questions by reading the code and, when asked why something was done, the agents' own conversation logs listed below (JSONL files). When the user asks for a change (a fix, a test, a rename), make it yourself with your edit tools instead of telling them what to paste, then say briefly what you changed. Only change what they asked for. Use git only to read: diff, log, show, status, blame; never commit. To run the project's tests, run exactly "${testScript()} run ${this.root}" (it finds the test command and records the result for the user). Run it after every edit you make and when the user asks whether things pass, and report how many passed and failed. Never run any other command. Be concise and point at file and line.\n\nAgents in this space right now:\n${lines.join("\n") || "- none"}`;
   }
 
   compose(question, snippet) {
@@ -289,13 +303,15 @@ export default class Changes extends View {
     cx.spawn(async (cx) => {
       try {
         const system = await this.preamble();
-        const send = (session) => exec("claude", ["-p", "--output-format", "json", "--allowedTools", ASK_TOOLS, "--add-dir", `${home()}/.claude/projects`, "--append-system-prompt", system, ...(model !== "default" ? ["--model", model] : []), ...(effort !== "default" ? ["--effort", effort] : []), ...(session ? ["--resume", session] : []), "--", prompt], { cwd: root, on, timeout: 600000 });
+        const send = (session) => exec("claude", ["-p", "--output-format", "json", "--allowedTools", `${ASK_TOOLS},Bash(${testScript()} run:*)`, "--add-dir", `${home()}/.claude/projects`, "--append-system-prompt", system, ...(model !== "default" ? ["--model", model] : []), ...(effort !== "default" ? ["--effort", effort] : []), ...(session ? ["--resume", session] : []), "--", prompt], { cwd: root, on, timeout: 600000 });
+        if (this.chat.role !== ASK_ROLE) this.chat.session = null;
         let r = await send(this.chat.session);
         if (r.code !== 0 && this.chat.session) { this.chat.session = null; r = await send(null); }
         if (!r.stdout.trim()) throw new Error(r.stderr.trim() || "No answer came back.");
         const out = JSON.parse(r.stdout);
         if (r.code !== 0 || out.is_error) throw new Error(String(out.result || r.stderr || "The question failed."));
         this.chat.session = out.session_id ?? this.chat.session;
+        this.chat.role = ASK_ROLE;
         message.a = String(out.result ?? "").trim() || "No answer came back.";
         message.status = "done";
       } catch (e) { message.status = "error"; message.a = String(e.message ?? e); }
@@ -306,7 +322,7 @@ export default class Changes extends View {
   // One exchange, read like a chat: the question is a right-aligned bubble, the answer sits under the assistant's name beside a rail.
   threadCard(m, t, last) {
     const answer = m.status === "pending"
-      ? h_flex().gap(7).items_center().text_size(12).text_color(t.working).child(svg("mods/workspace-chrome/spinner.svg").size(13).flex_none().text_color(t.working).spin(900)).child("Reading the code…")
+      ? h_flex().gap(7).items_center().text_size(12).text_color(t.working).child(svg("mods/workspace-chrome/spinner.svg").size(13).flex_none().text_color(t.working).spin(900)).child("Working…")
       : m.status === "error"
         ? div().text_size(12).text_color(t.blocked).child(m.a)
         : div().text_size(12.5).text_color(t.foreground).child(TextView.markdown(`answer-${m.id}`, m.a).selectable(true));
@@ -322,7 +338,16 @@ export default class Changes extends View {
       .child(v_flex().gap(5)
         .child(h_flex().gap(6).items_center().min_w(0).overflow_hidden().text_size(11)
           .child(div().flex_none().font_semibold().text_color(t.ansi5).child("Claude"))
-          .child(div().min_w(0).truncate().text_color(t.dim).child("· read-only, reads the code and the agents' logs")))
+          .child(div().min_w(0).truncate().text_color(t.dim).child("· reads, edits and tests the code, reads the agents' logs"))
+          .child(div().flex_1())
+          .when(m.status === "done", (e) => e.child(div().id(`copy-${m.id}`).flex_none().px(6).h(18).flex().items_center().rounded(4).cursor_pointer()
+            .text_color(this.copied === m.id ? t.ansi2 : t.dim).hover((h) => h.bg(t.hover).text_color(t.foreground)).tooltip("Copy this answer")
+            .on_click((_e, cx) => {
+              cx.write_to_clipboard(m.a);
+              this.copied = m.id; cx.notify();
+              cx.timer.after(1500, (cx) => { if (this.copied === m.id) { this.copied = null; cx.notify(); } });
+            })
+            .child(this.copied === m.id ? "Copied" : "Copy"))))
         .child(div().pl(12).pr(4).border_l(2).border_color(t.ansi5 + "88").child(answer)));
   }
 
@@ -356,9 +381,82 @@ export default class Changes extends View {
           .when(messages.length > 0, (e) => e.child(small("ask-new", "New chat", "Start over: the assistant forgets this conversation", (_e, cx) => this.newChat(cx)))))
         .child(h_flex().gap(8)
           .child(div().id("ask-box").flex_1().min_w(0).h(32).px(10).flex().items_center().rounded(8).border_1().border_color(this.asking ? t.accent : t.border).cursor_text().on_mouse_down("left", (_e, cx) => cx.stop_propagation()).child(Input.new(this.question).h_full().text_size(12).text_color(t.foreground)))
-          .child(div().id("ask-inline").h(32).px(14).flex().items_center().rounded(8).text_size(12).tooltip("One read-only conversation for this space: it reads the code and the agents' logs")
+          .child(div().id("ask-inline").h(32).px(14).flex().items_center().rounded(8).text_size(12).tooltip("One conversation for this space: it reads and edits the code and reads the agents' logs")
             .bg(ready ? t.solid : t.raised).text_color(ready ? t.solid_foreground : t.dim)
             .when(ready, (e) => e.cursor_pointer()).on_click((_e, cx) => { if (ready) this.ask("inline", cx); }).child(busy ? "Thinking…" : "Ask"))));
+  }
+
+  // The test command, the working tree's fingerprint and the last recorded run, from run-tests.sh.
+  loadTests(cx) {
+    const root = this.root, on = this.on;
+    if (!root || this.testsLoading) return;
+    this.testsLoading = true;
+    cx.spawn(async (cx) => {
+      try {
+        const r = await exec(testScript(), ["status", root], { cwd: root, on });
+        if (this.root === root) this.tests = r.code === 0 ? JSON.parse(r.stdout) : null;
+      } catch { if (this.root === root) this.tests = null; }
+      finally { this.testsLoading = false; cx.notify(); }
+    });
+  }
+
+  testsRunning() {
+    const last = this.tests?.result;
+    return Boolean(this.runningTests || (last?.running && Date.now() - last.at * 1000 < RUN_LIMIT_MS));
+  }
+
+  runTests(cx) {
+    const root = this.root, on = this.on;
+    if (!root || !this.tests?.cmd || this.testsRunning()) return;
+    this.runningTests = true; cx.notify();
+    cx.spawn(async (cx) => {
+      try { await exec(testScript(), ["run", root], { cwd: root, on, timeout: 960000 }); }
+      catch { /* the script records the failure itself */ }
+      finally { this.runningTests = false; this.loadTests(cx); }
+    });
+  }
+
+  testsRow(t) {
+    const tests = this.tests;
+    if (!tests) return null;
+    const last = tests.result, running = this.testsRunning();
+    const ago = last ? duration(Date.now() - last.at * 1000) : "";
+    const passed = last && !last.running && last.code === 0;
+    const outdated = last && !running && last.fp !== tests.fp;
+    const [color, text] = !tests.cmd ? [t.dim, "Tests: no test command found"]
+      : running ? [t.working, "Running tests\u2026"]
+      : !last ? [t.muted, "Tests: not run yet"]
+      : passed ? [t.ansi2, `\u2713 Tests passed \u00b7 ${last.summary} \u00b7 ${ago === "just now" ? ago : `${ago} ago`}`]
+      : [t.blocked, `\u2717 Tests failed \u00b7 ${last.summary || `exit ${last.code}`} \u00b7 ${ago === "just now" ? ago : `${ago} ago`}`];
+    return h_flex().h(30).flex_none().px(14).gap(8).items_center().border_b(1).border_color(t.border).text_size(11.5)
+      .when(running, (e) => e.child(svg("mods/workspace-chrome/spinner.svg").size(12).flex_none().text_color(t.working).spin(900)))
+      .child(div().min_w(0).truncate().text_color(color).child(text))
+      .when(Boolean(outdated), (e) => e.child(div().flex_none().text_color(t.dim).tooltip("The code changed after this run").child("\u00b7 code changed since")))
+      .child(div().flex_1())
+      .when(Boolean(tests.cmd) && !running, (e) => e.child(div().id("tests-run").flex_none().px(8).h(20).flex().items_center().rounded(5).bg(t.raised).text_size(11).text_color(t.muted)
+        .cursor_pointer().hover((h) => h.bg(t.hover).text_color(t.foreground)).tooltip(`Run ${tests.cmd}`)
+        .on_click((_e, cx) => this.runTests(cx)).child(last ? "Run again" : "Run tests")));
+  }
+
+  // The new-side line to open at: the first selected line, else the first change in the file.
+  editorLine() {
+    const rows = this.rowsNow();
+    const from = this.sel ? Math.min(this.sel.from, this.sel.to) : rows.findIndex((r) => r.kind === "+" || (r.kind === "pair" && r.right?.kind === "+"));
+    for (let i = Math.max(0, from); i < rows.length; i++) {
+      const r = rows[i], n = r.kind === "pair" ? r.right?.number : r.kind === "-" || r.kind === "@" ? undefined : r.number;
+      if (n) return n;
+    }
+    return 1;
+  }
+
+  // Opens the file in Zed (the nightly build when it is installed, as the shell's `z` does) at the line in view.
+  openInEditor(cx) {
+    if (!this.root || !this.open) return;
+    const root = this.root, target = `${root}/${this.open}:${this.editorLine()}`;
+    cx.spawn(async (cx) => {
+      const r = await exec("sh", ["-c", 'if command -v zed-nightly >/dev/null; then exec zed-nightly "$@"; else exec zed "$@"; fi', "sh", root, target], { cwd: root }).catch((e) => ({ code: 1, stderr: String(e) }));
+      if (r.code !== 0) { this.note = `Could not open Zed: ${(r.stderr || "").trim() || `exit ${r.code}`}`; cx.notify(); }
+    });
   }
 
   setRange(range, cx) {
@@ -386,7 +484,7 @@ export default class Changes extends View {
     if (this.loading || this.busy) { this.pending = true; return; }
     const { cwd, on } = location(), context = key();
     if (context !== this.context) {
-      this.context = context; this.root = null; this.files = []; this.open = null;
+      this.context = context; this.root = null; this.files = []; this.open = null; this.tests = null; this.base = null; this.baseAt = 0;
       this.setLines([]); this.error = null; this.note = null; this.watched = null; this.closed = false; this.limited = false;
     }
     if (!cwd) return;
@@ -395,7 +493,7 @@ export default class Changes extends View {
       try {
         const top = await exec("git", ["rev-parse", "--show-toplevel"], { cwd, on });
         if (key() !== context) return;
-        if (top.code !== 0) { this.root = null; this.files = []; this.setLines([]); this.open = null; this.error = "Not a git repository"; return; }
+        if (top.code !== 0) { this.root = null; this.tests = null; this.files = []; this.setLines([]); this.open = null; this.error = "Not a git repository"; return; }
         const root = top.stdout.trim(), git = (args) => exec("git", [...READ, ...args], { cwd: root, on });
         const status = await git(["status", "--porcelain=v1", "-z", "--no-renames", "--untracked-files=all"]);
         if (status.code !== 0) throw new Error(status.stderr);
@@ -450,6 +548,7 @@ export default class Changes extends View {
         }
       } catch (e) { if (key() === context) this.error = String(e); }
       finally { this.loading = false; cx.notify(); if (this.pending) { this.pending = false; this.refresh(cx); } }
+      if (this.root) this.loadTests(cx);
     });
   }
 
@@ -588,6 +687,8 @@ export default class Changes extends View {
       .when(enabledSeg, (e) => e.cursor_pointer().hover((h) => h.bg(on ? t.selected : t.hover))).on_click(enabledSeg ? click : () => {}).child(label);
     return v_flex().id("changes").size_full().min_h(0).rounded(10).overflow_hidden().bg(t.background).border_1().border_color(this.holds() ? t.accent : t.border).text_color(t.foreground).text_size(13).track_focus(this.handle)
       .on_key_down((e, cx) => {
+        if (e.key === "o" && !this.asking && !e.modifiers.control && !e.modifiers.alt && !e.modifiers.shift && this.open) { this.openInEditor(cx); cx.stop_propagation(); return; }
+        if (e.key === "tab" && !this.asking && !e.modifiers.control && !e.modifiers.alt && !e.modifiers.shift) { this.question.focus(); cx.stop_propagation(); cx.notify(); return; }
         const step = { down: "next", j: "next", up: "prev", k: "prev" }[e.key];
         if (step && !this.typing && !this.asking && !e.modifiers.control && !e.modifiers.alt && !e.modifiers.shift) { this.command(step, cx); cx.stop_propagation(); cx.notify(); return; }
         if (e.key === "escape" && !this.typing && !this.asking && this.sel) { this.sel = null; cx.stop_propagation(); cx.notify(); return; }
@@ -602,6 +703,7 @@ export default class Changes extends View {
         .child(seg("range-branch", this.base ? `Since ${this.base.name}` : "Since base", this.range === "branch", Boolean(this.base), (_e, cx) => this.setRange("branch", cx)))
         .child(div().flex_1())
         .child(div().text_size(11).text_color(this.files.length && reviewedCount === this.files.length ? t.ansi2 : t.muted).child(`${reviewedCount}/${this.files.length} reviewed`)))
+      .when(Boolean(this.tests && this.root), (e) => e.child(this.testsRow(t)))
       // overflow_y_scrollbar() wraps the list, so its flex sizing never reached the panel's layout.
       .child(div().flex_1().min_h(44).max_h(this.files.length * 28 + 12).relative().border_b(1).border_color(t.border)
         .child(v_flex().id("changes-list").absolute().inset_0().overflow_y_scroll().p(6).children(this.files.map((f) => {
@@ -613,7 +715,7 @@ export default class Changes extends View {
             .when(this.reviewed(f), (e) => e.child(svg("mods/workspace-chrome/check.svg").size(11).text_color(t.ansi2))))
           .child(div().w(14).text_size(11).text_color(f.status === "A" ? t.ansi2 : f.status === "D" ? t.ansi1 : f.status === "U" ? t.ansi1 : t.blocked).child(f.status))
           .child(h_flex().flex_1().min_w(0).child(div().text_color(t.dim).truncate().child(parts.length ? parts.join("/") + "/" : "")).child(div().max_w(260).min_w(0).truncate().text_color(this.reviewed(f) ? t.dim : t.foreground).child(name)))
-          .when(this.chat.messages.some((m) => m.path === f.path), (e) => e.child(div().text_size(10).text_color(t.accent).child(`${this.chat.messages.filter((m) => m.path === f.path).length} Q`)))
+          .when(this.chat.messages.some((m) => m.path === f.path), (e) => e.child(div().id(`asked-${f.path}`).text_size(10).text_color(t.accent).tooltip("Questions you asked the chat about this file").child(`${this.chat.messages.filter((m) => m.path === f.path).length} asked`)))
           .when(this.stale(f), (e) => e.child(div().text_size(10).text_color(t.blocked).child("changed")))
           .when(f.add > 0, (e) => e.child(div().text_size(11).text_color(t.ansi2).child(`+${f.add}`))).when(f.del > 0, (e) => e.child(div().text_size(11).text_color(t.ansi1).child(`−${f.del}`)));
       })).when(!this.files.length, (e) => e.child(div().p(8).text_color(t.dim).child(this.error || (this.loading ? "Loading changes…" : this.root ? "No uncommitted changes" : "No folder")))))
@@ -627,6 +729,9 @@ export default class Changes extends View {
           .child(seg("mode-unified", "Unified", this.mode === "unified", true, (_e, cx) => this.setMode("unified", cx)))
           .child(seg("mode-split", "Split", this.mode === "split", true, (_e, cx) => this.setMode("split", cx)))
           .child(seg("expand", "\u2922", false, true, (_e, cx) => { this.toggleExpand(); cx.notify(); })))
+        .child(div().id("open-zed").h(26).px(10).flex().items_center().rounded(6).cursor_pointer().text_size(12).bg(t.raised).text_color(t.muted)
+          .hover((h) => h.bg(t.hover).text_color(t.foreground)).tooltip("Open in Zed at the selected line, or the first change (key: o)")
+          .on_click((_e, cx) => this.openInEditor(cx)).child("Open in Zed"))
         .child(div().id("mark-reviewed").h(26).px(10).flex().items_center().rounded(6).cursor_pointer().text_size(12)
           .bg(openFile && this.reviewed(openFile) ? t.raised : t.solid).text_color(openFile && this.reviewed(openFile) ? t.muted : t.solid_foreground)
           .on_click((_e, cx) => this.toggleReviewed(this.open, cx, true))
