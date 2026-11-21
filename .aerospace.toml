@@ -14,7 +14,7 @@ start-at-login = true
 enable-normalization-flatten-containers = true
 enable-normalization-opposite-orientation-for-nested-containers = true
 
-accordion-padding = 10
+accordion-padding = 60
 default-root-container-layout = 'tiles'
 default-root-container-orientation = 'auto'
 
@@ -100,7 +100,7 @@ cmd-ctrl-shift-p = 'exec-and-forget pmset displaysleepnow'
 cmd-ctrl-f = 'fullscreen'
 cmd-ctrl-shift-f = 'macos-native-fullscreen'
 cmd-ctrl-v = 'layout floating tiling'
-cmd-ctrl-w = 'layout accordion tiles'
+cmd-ctrl-w = 'layout v_accordion h_tiles'
 
 cmd-ctrl-leftSquareBracket = 'join-with left'
 cmd-ctrl-rightSquareBracket = 'join-with right'
