@@ -16,6 +16,9 @@ const key = () => JSON.stringify(location());
 const READ = ["--no-optional-locks", "-c", "core.fsmonitor=false", "-c", "diff.autoRefreshIndex=false"];
 const MAX_ROWS = 5000;
 const BASES = ["origin/HEAD", "main", "master", "origin/main", "origin/master", "develop"];
+// What the diff is taken against: HEAD (work), HEAD's parent (commit), or where the branch forked (branch).
+const RANGES = ["work", "commit", "branch"];
+const asRange = (value) => (RANGES.includes(value) ? value : "work");
 const TONES = { keyword: "ansi5", string: "ansi2", comment: "dim", number: "ansi3", constant: "ansi3", function: "ansi4", type: "ansi6", property: "ansi4" };
 const tone = (t, c) => (c ? t[TONES[c]] : null) ?? t.foreground;
 const countLines = (text) => text ? text.split("\n").length - Number(text.endsWith("\n")) : 0;
@@ -134,7 +137,7 @@ export default class Changes extends View {
     if (props()?.menu) return;
     this.files = []; this.rows = []; this.diffWidth = 0; this.handle = cx.focus_handle(); this.hadFocus = false;
     cx.timer.every(200, (cx) => { const on = this.holds(); if (on !== this.hadFocus) { this.hadFocus = on; cx.notify(); } });
-    this.range = this.read("range") === "branch" ? "branch" : "work"; this.mode = this.read("mode") === "split" ? "split" : "unified"; this.split = []; this.half = 300; this.ratio = clamp(Number(this.read("ratio")) || 0.5, 0.15, 0.85); this.diffW = 800; this.splitVersion = 0; this.drag = false; this.heights = []; this.marks = {}; this.base = null;
+    this.range = asRange(this.read("range")); this.mode = this.read("mode") === "split" ? "split" : "unified"; this.split = []; this.half = 300; this.ratio = clamp(Number(this.read("ratio")) || 0.5, 0.15, 0.85); this.diffW = 800; this.splitVersion = 0; this.drag = false; this.heights = []; this.marks = {}; this.base = null;
     this.question = InputState.new({ placeholder: "Ask about this change, or ask for a fix" });
     this.question.on("change", (_e, cx) => { const has = Boolean(this.question.value().trim()); if (has !== this.hasQuestion) { this.hasQuestion = has; cx.notify(); } });
     this.question.on("submit", (_e, cx) => this.ask("inline", cx));
@@ -152,11 +155,11 @@ export default class Changes extends View {
     cx.timer.every(3000, (cx) => { if (this.root && (this.testsRunning() || this.chat.messages.some((m) => m.status === "pending"))) this.loadTests(cx); });
   }
 
-  // `herdr-app do my-changes.<command>`, and what a key binding can send: range:work, range:branch, next, prev, mark, open:<path>
+  // `herdr-app do my-changes.<command>`, and what a key binding can send: range:work, range:commit, range:branch, next, prev, mark, open:<path>
   command(name, cx) {
     const [verb, arg] = [name.split(":")[0], name.includes(":") ? name.slice(name.indexOf(":") + 1) : ""];
     const order = this.fileOrder(), at = order.findIndex((f) => f.path === this.open);
-    if (verb === "range") this.setRange(arg === "branch" ? "branch" : "work", cx);
+    if (verb === "range") this.setRange(asRange(arg), cx);
     else if (verb === "mode") this.setMode(arg === "split" ? "split" : "unified", cx);
     else if (verb === "expand") this.toggleExpand();
     else if (verb === "click" || verb === "shiftclick") this.pickRow(`${this.mode}${arg}`, verb === "shiftclick", cx);
@@ -193,14 +196,27 @@ export default class Changes extends View {
       const ok = await git(["rev-parse", "--verify", "--quiet", `${ref}^{commit}`]);
       if (ok.code !== 0) continue;
       const mb = await git(["merge-base", "HEAD", ref]);
-      if (mb.code === 0 && mb.stdout.trim()) { found = { name: ref.replace(/^origin\//, ""), rev: mb.stdout.trim() }; break; }
+      if (mb.code !== 0 || !mb.stdout.trim()) continue;
+      // origin/HEAD names no branch itself; show the one it points at ("master"), not "HEAD".
+      const target = ref === "origin/HEAD" ? (await git(["symbolic-ref", "--quiet", "--short", "refs/remotes/origin/HEAD"])).stdout.trim() : "";
+      found = { name: (target || ref).replace(/^origin\//, ""), rev: mb.stdout.trim() };
+      break;
     }
     this.base = found; this.baseAt = Date.now(); this.baseRoot = this.root;
     return found;
   }
 
-  marksKey() { return `reviewed:${this.root}:${this.range === "branch" ? this.against : "work"}`; }
-  triageKey() { return `triage:${this.root}:${this.range === "branch" ? this.against : "work"}`; }
+  // HEAD's first parent, where the "Last commit" range starts; null for a root commit.
+  async findParent(git) {
+    const r = await git(["log", "-1", "--format=%P%x00%s", "HEAD"]);
+    const [parents = "", subject = ""] = r.code === 0 ? r.stdout.trim().split("\0") : [];
+    const rev = parents.split(" ")[0];
+    this.parent = rev ? { rev, subject } : null;
+    return this.parent;
+  }
+
+  marksKey() { return `reviewed:${this.root}:${this.range === "work" ? "work" : this.against}`; }
+  triageKey() { return `triage:${this.root}:${this.range === "work" ? "work" : this.against}`; }
   loadVerdicts() { try { this.verdicts = JSON.parse(this.read(this.triageKey()) ?? "{}") || {}; } catch { this.verdicts = {}; } }
   loadMarks() { try { this.marks = JSON.parse(this.read(this.marksKey()) ?? "{}") || {}; } catch { this.marks = {}; } }
   saveMarks() { this.write(this.marksKey(), JSON.stringify(this.marks)); }
@@ -346,7 +362,9 @@ export default class Changes extends View {
 
   compose(question, snippet) {
     if (!snippet || !this.open) return question;
-    const where = this.range === "branch" && this.base ? `everything since ${this.base.name}` : "the uncommitted changes";
+    const where = this.range === "branch" && this.base ? `everything since ${this.base.name}`
+      : this.range === "commit" && this.parent ? `the last commit ("${this.parent.subject}") plus the uncommitted changes`
+      : "the uncommitted changes";
     return `About ${this.open} (${where}), ${snippet.label}:\n\n${FENCE}diff\n${snippet.text}\n${FENCE}\n\n${question}`;
   }
 
@@ -743,7 +761,7 @@ export default class Changes extends View {
     if (this.loading || this.busy) { this.pending = true; return; }
     const { cwd, on } = location(), context = key();
     if (context !== this.context) {
-      this.context = context; this.root = null; this.files = []; this.open = null; this.tests = null; this.base = null; this.baseAt = 0; this.verdicts = {};
+      this.context = context; this.root = null; this.files = []; this.open = null; this.tests = null; this.base = null; this.baseAt = 0; this.parent = null; this.verdicts = {};
       this.setLines([]); this.error = null; this.note = null; this.watched = null; this.closed = false; this.limited = false;
     }
     if (!cwd) return;
@@ -760,10 +778,11 @@ export default class Changes extends View {
         this.root = root;
         if (this.restoredFor !== root) {
           this.restoredFor = root;
-          try { const last = JSON.parse(this.read(this.lastKey()) ?? "null"); if (last?.range === "branch" || last?.range === "work") this.range = last.range; this.lastPath = last?.path ?? null; } catch { this.lastPath = null; }
+          try { const last = JSON.parse(this.read(this.lastKey()) ?? "null"); if (RANGES.includes(last?.range)) this.range = last.range; this.lastPath = last?.path ?? null; } catch { this.lastPath = null; }
         }
         const base = head.code === 0 ? await this.findBase(git) : null;
-        const against = this.range === "branch" && base ? base.rev : "HEAD";
+        const parent = head.code === 0 ? await this.findParent(git) : null;
+        const against = this.range === "branch" && base ? base.rev : this.range === "commit" && parent ? parent.rev : "HEAD";
         this.against = against;
         const stats = {};
         const results = head.code === 0 ? [await git(["diff", against, "--numstat", "-z", "--no-renames"])] : [await git(["diff", "--cached", "--numstat", "-z", "--no-renames"]), await git(["diff", "--numstat", "-z", "--no-renames"])];
@@ -977,7 +996,10 @@ export default class Changes extends View {
         .child(div().flex_1()).child(div().text_size(11).text_color(t.ansi2).child(`+${add}`)).child(div().text_size(11).text_color(t.ansi1).child(`−${del}`)))
       .child(h_flex().h(36).flex_none().px(10).gap(4).items_center().border_b(1).border_color(t.border)
         .child(seg("range-work", "Uncommitted", this.range === "work", true, (_e, cx) => this.setRange("work", cx)))
-        .child(seg("range-branch", this.base ? `Since ${this.base.name}` : "Since base", this.range === "branch", Boolean(this.base), (_e, cx) => this.setRange("branch", cx)))
+        .child(seg("range-commit", "Last commit", this.range === "commit", Boolean(this.parent), (_e, cx) => this.setRange("commit", cx))
+          .tooltip(this.parent ? `Since the parent of HEAD: "${this.parent.subject}" plus uncommitted changes` : "HEAD has no parent commit"))
+        .child(seg("range-branch", this.base ? `Since ${this.base.name}` : "Since base", this.range === "branch", Boolean(this.base), (_e, cx) => this.setRange("branch", cx))
+          .tooltip(this.base ? `The whole branch: every commit since it forked from ${this.base.name}, plus uncommitted changes` : "No base branch found"))
         .child(div().flex_1())
         .child(div().text_size(11).text_color(this.files.length && reviewedCount === this.files.length ? t.ansi2 : t.muted).child(`${reviewedCount}/${this.files.length} reviewed`)))
       .when(Boolean(this.tests && this.root), (e) => e.child(this.testsRow(t)))
@@ -986,7 +1008,7 @@ export default class Changes extends View {
         .when(this.listH > 0, (e) => e.flex_none().h(clamp(this.listH, 44, Math.max(44, this.panelH - 200))))
         .when(!this.listH, (e) => e.flex_1().max_h(listFit))
         .on_size_change((size, cx) => { if (Math.abs(size.height - this.listSeen) > 1) { this.listSeen = size.height; cx.notify(); } })
-        .child(v_flex().id("changes-list").absolute().inset_0().overflow_y_scroll().p(6).children(listRows.map((row) => this.listRow(row, t))).when(!this.files.length, (e) => e.child(div().p(8).text_color(t.dim).child(this.error || (this.loading ? "Loading changes…" : this.root ? "No uncommitted changes" : "No folder")))))
+        .child(v_flex().id("changes-list").absolute().inset_0().overflow_y_scroll().p(6).children(listRows.map((row) => this.listRow(row, t))).when(!this.files.length, (e) => e.child(div().p(8).text_color(t.dim).child(this.error || (this.loading ? "Loading changes…" : this.root ? (this.range === "work" ? "No uncommitted changes" : "No changes") : "No folder")))))
         .child(Scrollbar.vertical("changes-list").absolute().inset_0()))
       .child(div().id("list-handle").w_full().h(7).flex_none().flex().items_center().cursor_row_resize().hover((h) => h.bg(t.hover))
         .tooltip("Drag to resize the file list; double-click to fit it to the files")
