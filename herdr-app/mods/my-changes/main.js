@@ -3,8 +3,7 @@ import { v_flex, h_flex, InputState, Input, Scrollbar, v_virtual_list, TextView,
 import { spaces, panes, focused, terminals, exec, readTextFile, watchFolder, theme, settings, nextCommand, layout, run, shared, setShared, home, openOverlay, closeOverlay, props } from "herdr";
 import { langFor, highlightRows, hashLines, wrapTokens } from "./highlight.js";
 import { coordinatorNote } from "./coordinator.js";
-import { GuideSource, guideBanner } from "./guide_view.js";
-import { guideStats } from "./guide.js";
+import { GuideSource } from "./guide_view.js";
 import { LEVELS, LEVEL_LABEL, VERDICT_SCHEMA, pathFlags, diffFlags, isTest, isCode, testsChangedCode, levelOf, splitDiff, triagePrompt } from "./triage.js";
 
 function location() {
@@ -551,12 +550,8 @@ export default class Changes extends View {
 
   flagsOf(f) { return this.flags.get(f.path)?.flags ?? pathFlags(f); }
   verdictOf(f) { const v = this.verdicts[f.path]; return v && v.sig === this.sig(f) ? v : null; }
-  guideEntry(f) { return this.range === "branch" ? this.guide.entry(f.path, this.sig(f)) : null; }
+  guideEntry(f) { return this.range === "branch" && this.base ? this.guide.entry(f.path, this.sig(f)) : null; }
   levelFor(f) { return levelOf(this.flagsOf(f), this.guideEntry(f) ?? this.verdictOf(f)); }
-  guideBar(t) {
-    const branch = this.range === "branch", items = branch ? this.files.map((f) => ({ entry: this.guideEntry(f), reviewed: this.reviewed(f) })) : [];
-    return guideBanner(t, this.guide.guide, branch ? guideStats(items) : null, { label: `Show since ${this.base?.name ?? "base"}`, run: (_e, cx) => this.setRange("branch", cx) });
-  }
 
   // Files by how closely to read them; within a level, the most rule flags first, then the biggest change.
   riskGroups() {
@@ -1016,7 +1011,7 @@ export default class Changes extends View {
         .child(div().flex_1())
         .child(div().text_size(11).text_color(this.files.length && reviewedCount === this.files.length ? t.ansi2 : t.muted).child(`${reviewedCount}/${this.files.length} reviewed`)))
       .when(Boolean(this.tests && this.root), (e) => e.child(this.testsRow(t)))
-      .children([this.guideBar(t)].filter(Boolean))
+      .children([this.guide.bar(t, this)].filter(Boolean))
       // overflow_y_scrollbar() wraps the list, so its flex sizing never reached the panel's layout.
       .child(div().id("changes-list-box").min_h(44).relative()
         .when(this.listH > 0, (e) => e.flex_none().h(clamp(this.listH, 44, Math.max(44, this.panelH - 200))))

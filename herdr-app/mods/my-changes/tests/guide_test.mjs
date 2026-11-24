@@ -36,7 +36,7 @@ const stats = (moved) => guideStats(paths.map(([p, s]) => ({ entry: guideEntry(g
 assert.deepEqual(stats(false), { needYou: 1, normal: 1, skim: 1, done: 1 });
 assert.deepEqual(stats(true), { needYou: 3, normal: 0, skim: 0, done: 1 }, "a guide from an older HEAD marks every file as needing the user");
 
-const skim = { level: "skim", reason: "", sig: "M:1:1" };
+const skim = guideEntry(guide, "src/b.js", "A:10:0", false);
 assert.equal(levelOf([{ level: "high", text: "adds a bare except" }], skim), "high", "a coordinator skim does not hide a high rule flag");
 assert.equal(levelOf([], skim), "skim");
 
