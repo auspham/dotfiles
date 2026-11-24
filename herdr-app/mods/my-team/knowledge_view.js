@@ -7,7 +7,7 @@ import { ledgerSummary } from "./knowledge.js";
 const firstLine = (text) => text.split("\n")[0];
 
 function childRow(t, c) {
-  const tone = c.killed ? t.dim : c.verdict === "changes" ? t.blocked : c.verdict === "approved" ? t.done ?? t.working : t.muted;
+  const tone = c.killed ? t.dim : c.verdict === "reviewing" ? t.working : c.verdict === "changes" ? t.blocked : c.verdict === "approved" ? t.done ?? t.working : t.muted;
   return v_flex().id(`knowledge-${c.name}`).w_full().min_w(0).gap(1).text_size(11.5)
     .child(h_flex().gap(8).items_center()
       .child(div().flex_1().min_w(0).truncate().font_semibold().text_color(t.foreground).child(c.name))

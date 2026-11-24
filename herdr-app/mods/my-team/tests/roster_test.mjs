@@ -119,4 +119,7 @@ assert.equal(feedCount(12), "12 messages", "the feed count is shown in the heade
 assert.equal(feedCount(1), "1 message");
 assert.notEqual(messageKey({ at: 1, from: "a", to: "b" }), messageKey({ at: 2, from: "a", to: "b" }), "messages have distinct keys");
 
+const reviewed = [{ role: "child", status: "idle", review: "reviewing" }, { role: "child", status: "idle", review: "pending" }];
+assert.equal(childSummary(reviewed), "1 in review, 1 ready for review", "a child being reviewed is counted as in review, not waiting");
+
 console.log("my-team roster and feed: all checks passed");

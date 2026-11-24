@@ -73,7 +73,8 @@ export const spaceName = (terminals, spaceId) =>
 export function childSummary(cards) {
   const children = cards.filter((c) => c.role === "child");
   if (!children.length) return "";
-  const working = children.filter((c) => c.status === "working").length;
+  const reviewing = children.filter((c) => c.review === "reviewing").length;
+  const working = children.filter((c) => c.status === "working" && c.review !== "reviewing").length;
   const ready = children.filter((c) => c.status !== "working" && c.review === "pending").length;
-  return [working && `${working} working`, ready && `${ready} ready for review`].filter(Boolean).join(", ") || `${children.length} child${children.length === 1 ? "" : "ren"}, nothing waiting`;
+  return [working && `${working} working`, reviewing && `${reviewing} in review`, ready && `${ready} ready for review`].filter(Boolean).join(", ") || `${children.length} child${children.length === 1 ? "" : "ren"}, nothing waiting`;
 }
