@@ -112,18 +112,19 @@ export default class Team extends View {
   feedRows(t, feed) {
     const labels = new Map(this.cards.map((c) => [c.name, c.label]));
     const show = (name) => labels.get(name) ?? name;
-    if (!feed.length) return [div().text_size(11.5).text_color(t.dim).child("No messages yet. Agents message each other with SendMessage.")];
-    return feed.map((m, i) => h_flex().id(`msg-${i}`).gap(6).text_size(11.5).items_start()
-      .child(div().flex_none().font_semibold().text_color(t.foreground).child(`${show(m.from)} → ${show(m.to)}`))
-      .child(div().flex_1().min_w(0).text_color(t.muted).child(m.text)));
+    if (!feed.length) return [div().w_full().min_w(0).text_size(11.5).text_color(t.dim).child("No messages yet. Agents message each other with SendMessage.")];
+    // Sender and receiver on one line, the text under it using the full width and wrapping: nothing is cut at a narrow width.
+    return feed.map((m, i) => v_flex().id(`msg-${i}`).w_full().min_w(0).gap(1).text_size(11.5)
+      .child(div().w_full().min_w(0).font_semibold().text_color(t.foreground).child(`${show(m.from)} → ${show(m.to)}`))
+      .child(div().w_full().min_w(0).text_color(t.muted).child(m.text)));
   }
 
   feedSection(t) {
     const feed = messageFeed([...this.tails.values()]);
     const chatty = chattyPairs(feed, Date.now());
-    return v_flex().gap(6).mt(6)
+    return v_flex().w_full().min_w(0).gap(8).mt(6)
       .child(div().text_size(11).font_semibold().text_color(t.dim).child("Messages between agents"))
-      .when(chatty.length > 0, (e) => e.child(div().p(7).rounded(6).bg(t.blocked + "26").text_size(11.5).text_color(t.blocked)
+      .when(chatty.length > 0, (e) => e.child(div().w_full().min_w(0).p(7).rounded(6).bg(t.blocked + "26").text_size(11.5).text_color(t.blocked)
         .child(`${chatty.join(", ")} are messaging a lot. If it is a loop, tell one of them to stop.`)))
       .children(this.feedRows(t, feed));
   }
