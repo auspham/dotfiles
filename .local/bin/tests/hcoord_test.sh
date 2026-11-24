@@ -129,7 +129,8 @@ printf 'high%sa.txt%sbehaviour change\n' "$tab" "$tab" | run handoff shipped 2>/
 rm "$ship/scratch.txt"
 printf 'high%sa.txt%sbehaviour change\n' "$tab" "$tab" | run handoff shipped --summary "all done" || fail "handoff runs on committed work"
 guide=$(jq -r .labels.guide "$fx/$ship_t.json")
-[ "$(jq -r '.files | map(.path + "=" + .sig) | sort | join(" ")' "$guide")" = "a.txt=M:1:0 bin.dat=A:-:- new.txt=A:1:0" ] || { jq . "$guide" >&2; fail "handoff writes a guide the Changes tab can match"; }
+[ "$(jq -r '.files | map(.path + "=" + .sig) | sort | join(" ")' "$guide")" = "a.txt=M:1:0 bin.dat=A:0:0 new.txt=A:1:0" ] || { jq . "$guide" >&2; fail "handoff writes a guide the Changes tab can match"; }
+[ "$(jq -r '.files[] | select(.path == "bin.dat") | .sig' "$guide")" = A:0:0 ] || fail "a binary file's sig matches the Changes tab"
 [ "$(jq -r '.base' "$guide")" = "$(git -C "$ship" merge-base HEAD main)" ] && [ "$(jq -r '.head' "$guide")" = "$(git -C "$ship" rev-parse HEAD)" ] || fail "the guide names the fork point and the head"
 [ "$(jq -r '.files[] | select(.path == "a.txt") | .level + .reason' "$guide")" = "highbehaviour change" ] || fail "the guide keeps the coordinator's level and reason"
 [ "$(jq -r '.files[] | select(.path == "new.txt") | .level + "|" + .reason' "$guide")" = "normal|not in the coordinator's guide" ] || fail "a file left out of the guide is normal"
