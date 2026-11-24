@@ -5,12 +5,29 @@
 #   hcoord ls [--json]          hcoord diff <name> [--stat]
 #   hcoord review <name> approved|changes|pending [note]
 #   hcoord kill <name> [--worktree] [--force]
+#   hcoord adopt [--from <space-id>]   (take over the children recorded in a space's ledger, or report them orphaned)
+# spawn, review and kill also append to $COORDINATOR_HOME/spaces/<space>/ledger.jsonl (default ~/.claude/coordinator), the record a new coordinator adopts from.
 set -euo pipefail
 
 die() { echo "hcoord: $*" >&2; exit 1; }
 for tool in hc herdr-app jq git; do command -v "$tool" >/dev/null 2>&1 || die "$tool is not installed"; done
 me="${HC_TERMINAL_ID:-}"
 [ -n "$me" ] || die "run this from the coordinator's own herdr terminal"
+
+# The ledger is the durable record of this space's children; labels die with their terminals.
+ledger_file() { echo "${COORDINATOR_HOME:-$HOME/.claude/coordinator}/spaces/${1:-$(label_of "$me" herdr.space)}/ledger.jsonl"; }
+ledger_add() {
+  local file; file=$(ledger_file); mkdir -p "$(dirname "$file")"
+  jq -cn --arg event "$1" --arg name "$2" --arg coord "$me" --arg space "$(label_of "$me" herdr.space)" --arg where "$(label_of "$me" where)" --argjson extra "$3" \
+    '{at: (now | strftime("%Y-%m-%dT%H:%M:%SZ")), event: $event, name: $name, coord: $coord, space: $space, space_name: ($where | split(" / ")[0])} + $extra' >> "$file"
+}
+# Valid event objects of a ledger, one per line; a damaged line is skipped.
+ledger_events() {
+  local line; [ -f "$1" ] || return 0
+  while IFS= read -r line || [ -n "$line" ]; do
+    jq -c 'select(type == "object" and (.name | type) == "string")' <<<"$line" 2>/dev/null || true
+  done < "$1"
+}
 
 children() { hc ls --json --label role=child --label "coord=$me" | jq -r '.terminals[].address'; }
 label_of() { hc get "$1" --json | jq -r --arg k "$2" '.labels[$k] // empty'; }
@@ -53,13 +70,18 @@ cmd_spawn() {
 
   local argv message launched terminal
   argv=$(jq -cn --arg me "$me" --arg model "$model" --arg effort "$effort" '["env", "HERDR_ROLE=child", "HERDR_COORD=\($me)", "claude"] + (if $model == "" then [] else ["--model", $model] end) + (if $effort == "" then [] else ["--effort", $effort] end)')
-  message="$task"$'\n\n'"You work in your own git worktree on branch agent/$name, started from $base. Stay inside this folder. Commit your work on that branch when it is done (signed off, Conventional Commits). When you finish or get stuck, tell your coordinator with SendMessage."
+  local sid cname dir="${CLAUDE_SESSIONS_DIR:-$HOME/.claude/sessions}"
+  sid=$(label_of "$me" claude.session)
+  cname=$(jq -r --arg s "$sid" 'select(.sessionId == $s) | .name // empty' "$dir"/*.json 2>/dev/null | head -n 1 || true)
+  message="$task"$'\n\n'"You work in your own git worktree on branch agent/$name, started from $base. Stay inside this folder. Commit your work on that branch when it is done (signed off, Conventional Commits). When you finish or get stuck, tell your coordinator with SendMessage. $([ -n "$cname" ] && echo "Your coordinator is $cname (terminal $me); report to it with SendMessage to $cname." || echo "Your coordinator is terminal $me.")"
   # Without --space the tab opens in whichever space is focused, which is not necessarily the coordinator's.
   local space; space=$(label_of "$me" herdr.space)
   [ -n "$space" ] || die "cannot tell which herdr space this terminal is in"
   launched=$(herdr-app do tab.new --name "$name" --space "$space" --folder "$worktree" --argv "$argv" --task "$message" --focus false)
   terminal=$(jq -r '.terminal' <<<"$launched")
   hc label "$terminal" role=child "coord=$me" "task=$name" "worktree=$worktree" "branch=agent/$name" "base=$base" review=pending >/dev/null
+  ledger_add spawn "$name" "$(jq -cn --arg task "$task" --arg repo "$root" --arg worktree "$worktree" --arg branch "agent/$name" --arg base "$base" --arg model "$model" --arg effort "$effort" --arg terminal "$terminal" \
+    '{task: $task, repo: $repo, worktree: $worktree, branch: $branch, base: $base, model: $model, effort: $effort, terminal: $terminal}')"
   jq -cn --arg name "$name" --arg terminal "$terminal" --arg worktree "$worktree" --arg branch "agent/$name" '{name: $name, terminal: $terminal, worktree: $worktree, branch: $branch}'
 }
 
@@ -89,6 +111,7 @@ cmd_review() {
   local t; t=$(child_of "${1:?name}")
   case "${2:-}" in approved | changes | pending) ;; *) die "review is approved, changes or pending" ;; esac
   hc label "$t" "review=$2" "review_note=${3:0:200}" >/dev/null
+  ledger_add review "$1" "$(jq -cn --arg verdict "$2" --arg note "${3:-}" '{verdict: $verdict, note: $note}')"
 }
 
 cmd_kill() {
@@ -109,6 +132,32 @@ cmd_kill() {
     git -C "$root" worktree remove ${opts[@]+"${opts[@]}"} "$worktree"
     echo "removed the worktree; branch agent/$name is kept"
   fi
+  ledger_add kill "$name" "{\"worktree_removed\": $remove}"
+}
+
+cmd_adopt() {
+  local from="" src own line name worktree repo branch base terminal coord space t detail stat sep=$'\x1f'
+  case "${1:-}" in --from) from="${2:?space id}" ;; "") ;; *) die "unknown option $1" ;; esac
+  src=$(ledger_file "$from"); own=$(ledger_file)
+  while IFS= read -r line <&3; do
+    IFS="$sep" read -r name worktree repo branch base terminal coord space < <(jq -r '[.name, .worktree, .repo, .branch, .base, .terminal, .coord, .space] | map(. // "") | join("\u001f")' <<<"$line")
+    if [ "$src" != "$own" ] && [ -z "$(ledger_events "$own" | jq -c --arg n "$name" 'select(.name == $n)')" ]; then
+      mkdir -p "$(dirname "$own")"; ledger_events "$src" | jq -c --arg n "$name" 'select(.name == $n)' >> "$own"
+    fi
+    t=$(hc ls --json --label "task=$name" --label "worktree=$worktree" </dev/null | jq -r '.terminals[0].address // empty')
+    if [ -z "$t" ]; then
+      if git -C "$repo" worktree list --porcelain 2>/dev/null | grep -qxF "worktree $worktree"; then
+        stat=$(shortstat "$worktree" "$base"); detail="branch $branch, ${stat:-no changes}"
+      else detail="branch $branch, worktree missing"; fi
+      echo "orphaned $name $worktree ($detail)"
+      continue
+    fi
+    if [ "$(label_of "$t" coord)" != "$me" ]; then
+      hc label "$t" "coord=$me" >/dev/null
+      ledger_add adopt "$name" "$(jq -cn --arg terminal "$t" --arg from_coord "$coord" --arg from_space "$space" '{terminal: $terminal, from_coord: $from_coord, from_space: $from_space}')"
+    fi
+    echo "adopted $name $t"
+  done 3< <(ledger_events "$src" | jq -sc 'reduce .[] as $e ({}; .[$e.name] = (if $e.event == "spawn" then $e else (.[$e.name] // {}) + $e end)) | .[] | select(.event != "kill" and .worktree != null)')
 }
 
 case "${1:-}" in
@@ -117,5 +166,6 @@ case "${1:-}" in
   diff) shift; cmd_diff "$@" ;;
   review) shift; cmd_review "$@" ;;
   kill) shift; cmd_kill "$@" ;;
-  *) sed -n '2,8p' "$0" | sed 's/^# \{0,1\}//'; exit 2 ;;
+  adopt) shift; cmd_adopt "$@" ;;
+  *) sed -n '2,10p' "$0" | sed 's/^# \{0,1\}//'; exit 2 ;;
 esac
