@@ -77,5 +77,6 @@ export function childSummary(cards) {
   const working = children.filter((c) => c.status === "working" && c.review !== "reviewing").length;
   const ready = children.filter((c) => c.status !== "working" && c.review === "pending").length;
   const waiting = children.filter((c) => c.review === "yours").length;
-  return [working && `${working} working`, reviewing && `${reviewing} in review`, ready && `${ready} ready for review`, waiting && `${waiting} waiting for you`].filter(Boolean).join(", ") || `${children.length} child${children.length === 1 ? "" : "ren"}, nothing waiting`;
+  const done = children.filter((c) => c.review === "reviewed").length;
+  return [working && `${working} working`, reviewing && `${reviewing} in review`, ready && `${ready} ready for review`, waiting && `${waiting} waiting for you`, done && `${done} reviewed by you`].filter(Boolean).join(", ") || `${children.length} child${children.length === 1 ? "" : "ren"}, nothing waiting`;
 }

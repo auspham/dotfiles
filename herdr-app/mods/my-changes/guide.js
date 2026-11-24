@@ -69,3 +69,6 @@ export function guideStats(items) {
     done: need.filter((i) => i.reviewed).length,
   };
 }
+
+/** Whether the user may tell the coordinator the review is done: every Look closely file is ticked. @param {{ needYou: number, done: number }} stats @returns {boolean} */
+export const canFinish = (stats) => stats.done === stats.needYou;

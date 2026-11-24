@@ -124,4 +124,6 @@ assert.equal(childSummary(reviewed), "1 in review, 1 ready for review", "a child
 
 assert.equal(childSummary(kids(["working", "pending"], ["idle", "yours"], ["idle", "yours"])), "1 working, 2 waiting for you", "a child whose review is yours is counted as waiting for you");
 
+assert.equal(childSummary(kids(["idle", "reviewed"], ["idle", "reviewed"])), "2 reviewed by you", "a child reviewed by the user is counted as reviewed by you");
+
 console.log("my-team roster and feed: all checks passed");

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { validateGuide, parseGuide, guideEntry, guideStats, headMoved, guidePath, CHANGED, NOT_IN_GUIDE } from "../guide.js";
+import { validateGuide, parseGuide, guideEntry, guideStats, canFinish, headMoved, guidePath, CHANGED, NOT_IN_GUIDE } from "../guide.js";
 import { levelOf } from "../triage.js";
 
 const HEAD = "a".repeat(40);
@@ -41,5 +41,10 @@ assert.equal(levelOf([{ level: "high", text: "adds a bare except" }], skim), "hi
 assert.equal(levelOf([], skim), "skim");
 const raised = levelOf([{ level: "high", text: "adds a bare except" }], skim);
 assert.deepEqual(guideStats([{ level: raised, reviewed: false }, { level: raised, reviewed: true }]), { needYou: 2, normal: 0, skim: 0, done: 1 }, "a skim file raised by a rule flag counts as needing the user");
+
+assert.equal(canFinish({ needYou: 2, done: 1 }), false, "Done reviewing is enabled only when every Look closely file is reviewed");
+assert.equal(canFinish({ needYou: 2, done: 2 }), true);
+assert.equal(canFinish({ needYou: 0, done: 0 }), true, "with nothing to look closely at, Done reviewing is enabled");
+assert.equal(guidePath({ review: "reviewed", guide: "/g.json" }), null, "a reviewed child shows no banner");
 
 console.log("my-changes guide: all checks passed");
