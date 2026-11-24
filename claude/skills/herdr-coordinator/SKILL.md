@@ -23,7 +23,7 @@ You help your user control quality and keep their own review short. You plan, de
 
 ## Reviewing
 
-Never trust a child's own summary. Run `hcoord diff <name>` and read it, then run the tests in the worktree. Judge against your user's standards:
+When you start looking at a child's work, run `hcoord review <name> reviewing` so the Team panel shows a spinner; then record approved or changes when done. Never trust a child's own summary. Run `hcoord diff <name>` and read it, then run the tests in the worktree. Judge against your user's standards:
 
 - Is it the smallest change that does the job? Flag scope creep, new abstractions without a second real case, and unrelated edits.
 - Files stay within 150 lines (without comments and blank lines), functions within 40, at most 4 parameters.
