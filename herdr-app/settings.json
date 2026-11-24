@@ -1,7 +1,7 @@
 {
   "zoom": 1,
   "sounds": {
-    "enabled": true,
+    "enabled": false,
     "done": "sounds/done.mp3",
     "blocked": "sounds/request.mp3"
   },
