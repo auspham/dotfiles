@@ -77,15 +77,17 @@ export default class Team extends View {
       .on_click(() => run("agent.focus", { terminal: c.address }))
       .child(h_flex().gap(8).items_center()
         .child(this.statusMark(t, c.status))
-        .child(div().flex_1().min_w(0).truncate().font_semibold().text_color(t.foreground).child(c.name))
+        .child(div().flex_1().min_w(0).truncate().font_semibold().text_color(t.foreground).tooltip(`Session name: ${c.name}`).child(c.label))
         .child(div().flex_none().text_size(11).text_color(t.dim).child(c.where || c.folder)))
       .child(div().min_w(0).truncate().text_size(11.5).text_color(c.question ? t.blocked : t.muted).child(line || "Nothing yet"));
   }
 
   feedRows(t, feed) {
+    const labels = new Map(this.cards.map((c) => [c.name, c.label]));
+    const show = (name) => labels.get(name) ?? name;
     if (!feed.length) return [div().text_size(11.5).text_color(t.dim).child("No messages yet. Agents message each other with SendMessage.")];
     return feed.map((m, i) => h_flex().id(`msg-${i}`).gap(6).text_size(11.5).items_start()
-      .child(div().flex_none().font_semibold().text_color(t.foreground).child(`${m.from} → ${m.to}`))
+      .child(div().flex_none().font_semibold().text_color(t.foreground).child(`${show(m.from)} → ${show(m.to)}`))
       .child(div().flex_1().min_w(0).text_color(t.muted).child(m.text)));
   }
 

@@ -35,6 +35,7 @@ export function teamCards({ terminals, sessions, spaceId }) {
       address: t.address,
       session: t.labels?.["claude.session"] ?? null,
       name: displayName(t, sessions),
+      label: t.title?.trim() || displayName(t, sessions),
       status: typeof t.status === "string" ? t.status : (t.status?.state ?? "idle"),
       title: t.title || "",
       folder: folderOf(t),
