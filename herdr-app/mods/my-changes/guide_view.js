@@ -25,7 +25,7 @@ export class GuideSource {
 
   /** The banner for the Changes view `host`, or null without a guide. @param {object} t theme @param {any} host the Changes view */
   bar(t, host) {
-    const branch = host.range === "branch", items = branch ? host.files.map((f) => ({ entry: host.guideEntry(f), reviewed: host.reviewed(f) })) : [];
+    const branch = host.range === "branch", items = branch ? host.files.map((f) => ({ level: host.levelFor(f), reviewed: host.reviewed(f) })) : [];
     return guideBanner(t, this.guide, branch ? guideStats(items) : null, { label: `Show since ${host.base?.name ?? "base"}`, run: (_e, cx) => host.setRange("branch", cx) });
   }
 

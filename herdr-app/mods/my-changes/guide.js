@@ -59,13 +59,13 @@ export function guideEntry(guide, path, sig, moved) {
   return { level: g.level, reason: `Coordinator: ${g.reason || "no reason given"}`, stale: false };
 }
 
-/** Counts for the banner. @param {{ entry: GuideEntry, reviewed: boolean }[]} items @returns {{ needYou: number, normal: number, skim: number, done: number }} */
+/** Counts for the banner, by each file's final level. @param {{ level: Level, reviewed: boolean }[]} items @returns {{ needYou: number, normal: number, skim: number, done: number }} */
 export function guideStats(items) {
-  const need = items.filter((i) => i.entry.level === "high");
+  const need = items.filter((i) => i.level === "high");
   return {
     needYou: need.length,
-    normal: items.filter((i) => i.entry.level === "normal").length,
-    skim: items.filter((i) => i.entry.level === "skim").length,
+    normal: items.filter((i) => i.level === "normal").length,
+    skim: items.filter((i) => i.level === "skim").length,
     done: need.filter((i) => i.reviewed).length,
   };
 }

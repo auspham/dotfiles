@@ -32,12 +32,14 @@ assert.deepEqual([missing.level, missing.reason], ["normal", NOT_IN_GUIDE], "a c
 assert.equal(headMoved(guide, HEAD.slice(0, 12)), false);
 assert.equal(headMoved(guide, "c".repeat(40)), true);
 const paths = [["src/a.js", "M:3:1"], ["src/b.js", "A:10:0"], ["src/new.js", "A:1:0"]];
-const stats = (moved) => guideStats(paths.map(([p, s]) => ({ entry: guideEntry(guide, p, s, moved), reviewed: p === "src/a.js" })));
+const stats = (moved) => guideStats(paths.map(([p, s]) => ({ level: guideEntry(guide, p, s, moved).level, reviewed: p === "src/a.js" })));
 assert.deepEqual(stats(false), { needYou: 1, normal: 1, skim: 1, done: 1 });
 assert.deepEqual(stats(true), { needYou: 3, normal: 0, skim: 0, done: 1 }, "a guide from an older HEAD marks every file as needing the user");
 
 const skim = guideEntry(guide, "src/b.js", "A:10:0", false);
 assert.equal(levelOf([{ level: "high", text: "adds a bare except" }], skim), "high", "a coordinator skim does not hide a high rule flag");
 assert.equal(levelOf([], skim), "skim");
+const raised = levelOf([{ level: "high", text: "adds a bare except" }], skim);
+assert.deepEqual(guideStats([{ level: raised, reviewed: false }, { level: raised, reviewed: true }]), { needYou: 2, normal: 0, skim: 0, done: 1 }, "a skim file raised by a rule flag counts as needing the user");
 
 console.log("my-changes guide: all checks passed");
