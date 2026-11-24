@@ -148,6 +148,18 @@ write_session s1 child-agent busy 100; write_session s2 old-agent idle 200; writ
 out=$(HERDR_ROLE=child HERDR_COORD=t2 run SessionStart s1 | context)
 grep -q 'Your coordinator is new-agent (terminal t3)' <<<"$out" || fail "an adopted child names its new coordinator from the label"
 
+# A child is told its coordinator even when it sees no peers.
+reset
+terminal t1 spA s1 "task work" /w/wt child t2; write_session s1 child-agent busy 100
+out=$(HERDR_ROLE=child run SessionStart s1 | context)
+grep -q 'Your coordinator is unknown (terminal t2)' <<<"$out" || fail "a child with no visible peers is still told who its coordinator is"
+
+# A damaged session file is skipped, not fatal.
+reset
+terminal t1 spA s1 "me" /w/app; terminal t2 spA s2 "fixing the login bug" /w/api coordinator
+write_session s1 me-agent busy 100; write_session s2 api-agent idle 200; printf '{"sessionId":"s9","na' > "$sessions/900.json"
+run SessionStart s1 | context | grep -q 'api-agent' || fail "one damaged session file does not hide the other agents"
+
 # Opting out leaves the agent a plain peer.
 reset; enable spA
 terminal t1 spA s1 "me" /w/app; write_session s1 me-agent busy 100

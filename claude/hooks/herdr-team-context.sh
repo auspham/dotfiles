@@ -27,7 +27,7 @@ spaces_dir="${COORDINATOR_HOME:-$HOME/.claude/coordinator}/spaces"
 # Live sessions by id: name and busy/idle. The .key files beside them hold credentials and are never read.
 registry='{}'
 if compgen -G "$sessions_dir/*.json" >/dev/null; then
-  registry=$(jq -s 'map(select(.sessionId != null)) | map({key: .sessionId, value: {name: .name, status: .status}}) | from_entries' "$sessions_dir"/*.json 2>/dev/null || echo '{}')
+  registry=$(for f in "$sessions_dir"/*.json; do jq -c 'select(.sessionId != null) | {key: .sessionId, value: {name: .name, status: .status}}' "$f" 2>/dev/null; done | jq -s 'from_entries' 2>/dev/null || echo '{}')
 fi
 
 # One JSON object per Claude terminal: where it is, what it works on and its role.
@@ -67,7 +67,7 @@ own_name=$(jq -rn --argjson reg "$registry" --arg me "$session" '$reg[$me].name 
 space_name=$(jq -r '(.where // "this space") | split(" / ")[0]' <<<"$own")
 
 context=""
-if [ -n "$roster" ] || [ "$role" = coordinator ]; then
+if [ -n "$roster" ] || [ "$role" = coordinator ] || [ "$role" = child ]; then
   context="You are one of several Claude agents sharing the herdr space \"$space_name\". You are $own_name (terminal $HC_TERMINAL_ID)."
   [ -z "$roster" ] || context+=$'\n'"Peers right now (status as of when this was written; ListAgents shows it live):"$'\n'"$roster"
   case "$role" in
