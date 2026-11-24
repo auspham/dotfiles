@@ -27,6 +27,14 @@ check "the status line still writes usage.json" "$(jq -c '.rate_limits.five_hour
 
 check "a session's cost is recorded" "$(jq -r '"\(.session) \(.cost) \(.model)"' "$costs/abc-1.json")" "abc-1 1.5 Opus"
 
+check "a cost file records whether the session had limits" "$(jq -r '.limits' "$costs/abc-1.json")" "true"
+check "limits.json is only written when limits are reported" "$(jq -c '.rate_limits.seven_day.used_percentage' "$root/home/.cache/claude/limits.json")" "50"
+rm "$root/home/.cache/claude/limits.json"
+run "$no_limits" > /dev/null
+check "limits.json is only written when limits are reported (none reported)" "$([ -e "$root/home/.cache/claude/limits.json" ] && echo exists || echo absent)" "absent"
+check "a cost file records whether the session had limits (none reported)" "$(jq -r '.limits' "$costs/abc-1.json")" "false"
+run "$with_limits" > /dev/null
+
 run "$unsafe" > /dev/null
 check "an unsafe session id is not used as a path" "$(find "$root" -name 'evil*' | wc -l | tr -d ' ')" "0"
 

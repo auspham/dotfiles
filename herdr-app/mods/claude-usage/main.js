@@ -1,10 +1,10 @@
-// Claude's 5-hour and 7-day limits: how much is left and when each resets. Accounts that report no limits
-// get an estimated spend view instead. The Claude Code status line (claude/statusline.sh) writes
-// ~/.cache/claude/usage.json and one ~/.cache/claude/cost/<session>.json per session on every refresh.
+// Claude's 5-hour and 7-day limits: how much is left and when each resets. Sessions that report no limits
+// add an estimated spend section. The Claude Code status line (claude/statusline.sh) writes
+// ~/.cache/claude/limits.json (only when limits are reported) and one ~/.cache/claude/cost/<session>.json per session.
 import { View, div } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
 import { exec, readTextFile, home, theme, layout } from "herdr";
-import { dollars, parseCost, pickView, spendTotals } from "./spend.js";
+import { dollars, parseCost, pickViews, spendTotals } from "./spend.js";
 
 const STALE_MS = 15 * 60000;
 const LIST_COSTS = 'ls "$HOME"/.cache/claude/cost/*.json 2>/dev/null';
@@ -42,6 +42,7 @@ function clock(ms) {
 export default class ClaudeUsage extends View {
   init(_props, cx) {
     this.data = null;
+    this.views = { limits: false, spend: false };
     /** @type {import("./spend.js").CostEntry[]} */
     this.costs = [];
     this.load(cx);
@@ -50,9 +51,10 @@ export default class ClaudeUsage extends View {
 
   load(cx) {
     cx.spawn(async (cx) => {
-      const text = await readTextFile(`${home()}/.cache/claude/usage.json`).catch(() => null);
+      const text = await readTextFile(`${home()}/.cache/claude/limits.json`).catch(() => null);
       try { this.data = text ? JSON.parse(text) : null; } catch { this.data = null; }
-      if (pickView(this.data) === "spend") await this.loadCosts();
+      await this.loadCosts();
+      this.views = pickViews(this.data, this.costs, Date.now());
       cx.notify();
     });
   }
@@ -101,12 +103,17 @@ export default class ClaudeUsage extends View {
     const now = Date.now();
     const at = Number(this.data?.at) * 1000;
     const stale = Number.isFinite(at) && now - at > STALE_MS;
-    const spend = pickView(this.data) === "spend";
-    return v_flex().size_full().min_h(0).px(16).pt(10).pb(10).gap(10).bg(t.chrome).border_t(1).border_color(t.border)
+    const { spend } = this.views;
+    const limits = this.views.limits || !spend;
+    return v_flex().id("claude-usage").size_full().min_h(0).overflow_y_scroll().px(16).pt(10).pb(10).gap(10).bg(t.chrome).border_t(1).border_color(t.border)
       .child(h_flex().items_center().text_size(11.5).text_color(t.dim)
-        .child(div().font_medium().child(spend ? "Claude spend (estimated)" : "Claude usage"))
+        .child(div().font_medium().child(limits ? "Claude usage" : "Claude spend (estimated)"))
         .child(div().flex_1())
-        .when(stale, (el) => el.child(div().text_size(11).child(`updated ${duration(now - at)} ago`))))
-      .children(spend ? this.spendRows(t, now) : WINDOWS.map(([key, name]) => this.row(t, key, name, now)));
+        .when(limits && stale, (el) => el.child(div().text_size(11).child(`updated ${duration(now - at)} ago`))))
+      .children(limits ? WINDOWS.map(([key, name]) => this.row(t, key, name, now)) : [])
+      .children(spend ? [
+        ...(limits ? [div().font_medium().text_size(11.5).text_color(t.dim).child("Spend (estimated)")] : []),
+        ...this.spendRows(t, now),
+      ] : []);
   }
 }

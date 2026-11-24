@@ -22,42 +22,50 @@
           "window_drag": true
         },
         {
-          "id": "sidebar-lists",
+          "id": "sidebar-main",
           "type": "column",
           "children": [
             {
-              "id": "spaces",
-              "type": "block",
-              "content": {
-                "mod": "my-spaces"
-              },
-              "size": {
-                "weight": 1
-              },
-              "min": 90
+              "id": "sidebar-lists",
+              "type": "column",
+              "children": [
+                {
+                  "id": "spaces",
+                  "type": "block",
+                  "content": {
+                    "mod": "my-spaces"
+                  },
+                  "size": {
+                    "weight": 1
+                  },
+                  "min": 90
+                },
+                {
+                  "id": "agents",
+                  "type": "block",
+                  "content": {
+                    "mod": "my-agents"
+                  },
+                  "size": {
+                    "weight": 1
+                  },
+                  "min": 90
+                }
+              ]
             },
             {
-              "id": "agents",
+              "id": "usage",
               "type": "block",
               "content": {
-                "mod": "my-agents"
+                "mod": "claude-usage"
               },
               "size": {
-                "weight": 1
+                "px": 158
               },
-              "min": 90
+              "min": 80,
+              "max": 360
             }
           ]
-        },
-        {
-          "id": "usage",
-          "type": "block",
-          "content": {
-            "mod": "claude-usage"
-          },
-          "size": {
-            "px": 158
-          }
         },
         {
           "id": "sidebar-footer",

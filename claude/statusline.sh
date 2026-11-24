@@ -4,7 +4,14 @@ input=$(cat)
 cache="$HOME/.cache/claude"
 costdir="$cache/cost"
 
-{ mkdir -p "$cache" && echo "$input" | jq -c '{rate_limits, at: now}' > "$cache/usage.json.tmp" && mv "$cache/usage.json.tmp" "$cache/usage.json"; } 2>/dev/null
+write_usage() {
+  mkdir -p "$cache" || return
+  echo "$input" | jq -c '{rate_limits, at: now}' > "$cache/usage.json.tmp" && mv "$cache/usage.json.tmp" "$cache/usage.json"
+  if echo "$input" | jq -e '.rate_limits | type == "object"' > /dev/null 2>&1; then
+    cp "$cache/usage.json" "$cache/limits.json.tmp" && mv "$cache/limits.json.tmp" "$cache/limits.json"
+  fi
+}
+write_usage 2>/dev/null
 
 model=$(echo "$input" | jq -r '.model.display_name')
 used=$(echo "$input" | jq -r '.context_window.used_percentage // empty')
@@ -17,11 +24,12 @@ session=$(echo "$input" | jq -r '.session_id // empty')
 
 record_cost() {
   case "$session" in '' | *[!A-Za-z0-9-]*) return ;; esac
-  local file="$costdir/$session.json" started
+  local file="$costdir/$session.json" started limits
   mkdir -p "$costdir" || return
+  limits=$(echo "$input" | jq '.rate_limits | type == "object"')
   started=$(jq -r '.started // empty' "$file" 2>/dev/null)
-  jq -nc --arg session "$session" --arg model "$model" --argjson cost "$cost" --arg started "$started" \
-    '(now | floor) as $at | {session: $session, cost: $cost, model: $model, at: $at, started: (if $started == "" then $at else ($started | tonumber) end)}' \
+  jq -nc --arg session "$session" --arg model "$model" --argjson cost "$cost" --arg started "$started" --argjson limits "$limits" \
+    '(now | floor) as $at | {session: $session, cost: $cost, model: $model, limits: $limits, at: $at, started: (if $started == "" then $at else ($started | tonumber) end)}' \
     > "$file.tmp" && mv "$file.tmp" "$file"
 }
 
