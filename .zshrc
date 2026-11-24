@@ -166,3 +166,23 @@ compdef _thcd thcd
 
 # Render an image inline via sixel (WezTerm + tmux 3.4; Kitty/iTerm2 fail as passthrough is off)
 img() { chafa -f sixels "$@"; }
+
+# herdr-core brings a lost terminal (reboot, core restart) back as a fresh shell with its labels.
+# If Claude was cut off there, type its resume command at the first prompt (after p10k's instant prompt).
+_herdr_resume_claude() {
+  add-zle-hook-widget -d line-init _herdr_resume_claude
+  (( $+commands[hc] && $+commands[jq] && $+commands[claude] )) || return
+  local info session
+  info=$(hc get "$HC_TERMINAL_ID" --json 2>/dev/null) || return
+  [[ $(jq -r .pid <<<"$info") == $$ ]] || return
+  session=$(jq -r '.labels["claude.session"] // empty' <<<"$info")
+  [[ -n $session ]] || return
+  hc label "$HC_TERMINAL_ID" claude.session= >/dev/null 2>&1
+  BUFFER="claude --resume $session"
+  zle accept-line
+}
+if [[ -o interactive && -n $HC_TERMINAL_ID ]]; then
+  autoload -Uz add-zle-hook-widget
+  zle -N _herdr_resume_claude
+  add-zle-hook-widget line-init _herdr_resume_claude
+fi
