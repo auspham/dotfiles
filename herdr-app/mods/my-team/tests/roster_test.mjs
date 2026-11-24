@@ -89,10 +89,10 @@ assert.deepEqual(settingsFor(parseSettings("{ nope"), "spA"), { enabled: false, 
 const saved = withSetting({}, "spA", { enabled: true });
 assert.deepEqual(settingsFor(parseSettings(saved), "spA"), { enabled: true, model: "", effort: "" }, "switching a space on is remembered");
 assert.equal(settingsFor(parseSettings(saved), "spB").enabled, false, "other spaces stay off");
-const picked = withSetting(parseSettings(saved), "spA", { model: "haiku" });
-assert.deepEqual(settingsFor(parseSettings(picked), "spA"), { enabled: true, model: "haiku", effort: "" }, "a model choice keeps the switch");
+const picked = withSetting(parseSettings(saved), "spA", { model: "claude-haiku-5-5" });
+assert.deepEqual(settingsFor(parseSettings(picked), "spA"), { enabled: true, model: "claude-haiku-5-5", effort: "" }, "a model choice keeps the switch");
 const effortful = withSetting(parseSettings(picked), "spA", { effort: "high" });
-assert.deepEqual(settingsFor(parseSettings(effortful), "spA"), { enabled: true, model: "haiku", effort: "high" }, "effort is kept beside the model");
+assert.deepEqual(settingsFor(parseSettings(effortful), "spA"), { enabled: true, model: "claude-haiku-5-5", effort: "high" }, "effort is kept beside the model");
 assert.equal(settingsFor({ spA: { effort: "turbo" } }, "spA").effort, "", "an unknown effort is ignored");
 assert.equal(settingsFor({ spA: { enabled: true, model: "gpt" } }, "spA").model, "", "an unknown model is ignored");
 assert.ok(MODELS.every((m) => typeof m.label === "string"));

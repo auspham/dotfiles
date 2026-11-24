@@ -22,10 +22,10 @@ function dropdown(t, { name, title, options, value, open, onOpen, onPick }) {
     .cursor_pointer().hover((h) => h.bg(t.hover)).text_size(12).text_color(t.foreground)
     .on_click((_e, cx) => onOpen(open ? null : name, cx))
     .child(current.label).child(svg("mods/workspace-chrome/chevron-down.svg").size(11).flex_none().text_color(t.dim));
-  const list = v_flex().py(4).min_w(120).rounded(6).bg(t.raised).border(1).border_color(t.border)
+  const list = v_flex().py(4).min_w(130).rounded(6).bg(t.raised).border(1).border_color(t.border)
     .children(options.map((o) => option(t, name, o, o.id === value, (id, cx) => { onPick(id, cx); onOpen(null, cx); })));
   return h_flex().gap(8).items_center()
-    .child(div().w(46).flex_none().text_size(11).text_color(t.dim).child(title))
+    .child(div().flex_none().text_size(11).text_color(t.dim).child(title))
     .child(Popup.new(`${name}-popup`, trigger).anchor("bottom_left").when(open, (e) => e.content(list)));
 }
 
@@ -36,7 +36,8 @@ export function coordinatorControls(t, settings, menu, { onToggle, onModel, onEf
     .child(div().text_size(11).text_color(t.dim).child(settings.enabled
       ? "One agent here leads: it launches child agents in their own tabs and reviews them."
       : "Off: agents here work on their own. Switch on to have one agent coordinate the rest."))
-    .when(settings.enabled, (e) => e
+    // Side by side while they fit, the second one drops to its own line when the panel is too narrow.
+    .when(settings.enabled, (e) => e.child(h_flex().flex_wrap().gap_x(16).gap_y(7)
       .child(dropdown(t, { name: "model", title: "Model", options: MODELS, value: settings.model, open: menu === "model", onOpen, onPick: onModel }))
-      .child(dropdown(t, { name: "effort", title: "Effort", options: EFFORTS, value: settings.effort, open: menu === "effort", onOpen, onPick: onEffort })));
+      .child(dropdown(t, { name: "effort", title: "Effort", options: EFFORTS, value: settings.effort, open: menu === "effort", onOpen, onPick: onEffort }))));
 }

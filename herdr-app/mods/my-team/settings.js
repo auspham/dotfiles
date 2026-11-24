@@ -6,9 +6,10 @@ export const SETTINGS_PATH = ".config/herdr-team/coordinator.json";
 /** The models a child can run on; "" lets Claude pick its own default. */
 export const MODELS = [
   { id: "", label: "Default" },
-  { id: "haiku", label: "Haiku" },
-  { id: "sonnet", label: "Sonnet" },
-  { id: "opus", label: "Opus" },
+  { id: "claude-haiku-5-5", label: "Haiku 5.5" },
+  { id: "claude-sonnet-5-5", label: "Sonnet 5.5" },
+  { id: "claude-opus-5-5", label: "Opus 5.5" },
+  { id: "claude-fable-5-2", label: "Fable 5.2" },
 ];
 
 /** How hard a child thinks, as `claude --effort` takes it; "" lets Claude use its own default. */
