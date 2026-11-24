@@ -105,9 +105,9 @@ export default class Agents extends View {
     cx.timer.every(500, (cx) => this.trackEvents(cx));
     this.archived = new Set();
     try { this.archivedOpen = localStorage.getItem("archivedOpen") === "1"; } catch { this.archivedOpen = false; }
-    const load = () => readTextFile(`${appHome()}/${ARCHIVE_FILE}`).catch(() => null).then((text) => { this.archived = parseArchived(text); cx.notify(); });
-    load();
-    cx.timer.every(3000, load);
+    const load = (cx) => cx.spawn(async (cx) => { this.archived = parseArchived(await readTextFile(`${appHome()}/${ARCHIVE_FILE}`).catch(() => null)); cx.notify(); });
+    load(cx);
+    cx.timer.every(3000, (cx) => load(cx));
   }
 
   // Stamps agents whose state changed. Done and idle count as one: looking at a
