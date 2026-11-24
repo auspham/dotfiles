@@ -27,12 +27,12 @@ terminal() { # address space session title folder [role] [coord]
     '{address: $a, _agent: "claude-code", title: $t, cwd: $f, labels: ({"herdr.space": $sp, where: "alpha / \($a)", "claude.session": $s} + (if $r != "" then {role: $r} else {} end) + (if $c != "" then {coord: $c} else {} end))}' > "$fx/$1.json"
 }
 write_session() { printf '{"sessionId":"%s","name":"%s","status":"%s"}' "$1" "$2" "$3" > "$sessions/$4.json"; }
-reset() { rm -f "$fx"/*.json "$sessions"/* "$root/labels.log" "$root/state"/* 2>/dev/null || true; }
+reset() { rm -rf "$root/state"; rm -f "$fx"/*.json "$sessions"/* "$root/labels.log" 2>/dev/null || true; }
 
 run() { # event session [extra json]
   printf '{"hook_event_name":"%s","session_id":"%s"%s}' "$1" "$2" "${3:-}" |
     env PATH="$bin:$PATH" HOME="$home" XDG_STATE_HOME="$root/state" CLAUDE_SESSIONS_DIR="$sessions" \
-      COORDINATOR_PREFERENCES="$root/prefs.md" HC_TERMINAL_ID="${HC_TERMINAL_ID-t1}" "$hook"
+      COORDINATOR_PREFERENCES="$root/prefs.md" HC_TERMINAL_ID="${TEST_ME-t1}" "$hook"
 }
 fail() { echo "FAIL: $*" >&2; exit 1; }
 context() { jq -r '.hookSpecificOutput.additionalContext'; }
@@ -64,8 +64,8 @@ run UserPromptSubmit s1 | context | grep -q new-agent || fail "a prompt repeats 
 [ -n "$(run SessionStart s1)" ] || fail "a session start always repeats the roster"
 
 [ -z "$(run SessionStart s1 ',"agent_id":"sub1"')" ] || fail "a sub-agent says nothing"
-[ -z "$(HC_TERMINAL_ID='' run SessionStart s1)" ] || fail "outside herdr it says nothing"
-[ -z "$(run SessionStart s9)" ] || fail "an unknown session says nothing"
+[ -z "$(TEST_ME='' run SessionStart s1)" ] || fail "outside herdr it says nothing"
+[ -z "$(TEST_ME=t9 run SessionStart s1)" ] || fail "an unknown terminal says nothing"
 [ -z "$(run Stop s1)" ] || fail "other events say nothing"
 
 # The first agent in a space becomes its coordinator, even with nobody else there.
@@ -77,6 +77,15 @@ labelled 'role=coordinator' || fail "the first agent is labelled coordinator"
 grep -q 'coordinator of this herdr space' <<<"$out" || fail "it gets the coordinator charter, alone"
 grep -q 'Never edit code yourself' <<<"$out" || fail "the charter says the coordinator never edits code"
 grep -q 'Prefer short reports.' <<<"$out" || fail "it is given what is known about the user"
+
+# The label hook may not have run yet at SessionStart, so the terminal is found by address, not by session label.
+reset
+terminal t1 spA s1 "me" /w/app; jq 'del(.labels["claude.session"])' "$fx/t1.json" > "$fx/t1.tmp" && mv "$fx/t1.tmp" "$fx/t1.json"
+write_session s1 me-agent busy 100
+run SessionStart s1 | context | grep -q 'coordinator of this herdr space' || fail "a first agent without a session label becomes coordinator"
+labelled 'role=coordinator' || fail "and is labelled"
+rm -f "$root/labels.log"; reset; terminal t1 spA s1 "me" /w/app; write_session s1 me-agent busy 100
+run UserPromptSubmit s1 | context | grep -q 'coordinator of this herdr space' || fail "an agent that missed the election at start gets it on its first prompt"
 
 # A coordinator whose session died does not count: the next agent is the first one in the space.
 reset

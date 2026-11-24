@@ -34,14 +34,16 @@ terminals=$(
   done | jq -s '.'
 )
 
-own=$(jq -c --arg me "$session" 'map(select(.session == $me)) | first // empty' <<<"$terminals")
+# Found by terminal, not by the claude.session label: another SessionStart hook sets that label at the same moment.
+own=$(jq -c --arg me "$HC_TERMINAL_ID" 'map(select(.address == $me)) | first // empty' <<<"$terminals")
 [ -n "$own" ] || exit 0
 space=$(jq -r '.space' <<<"$own")
 own_role=$(jq -r '.role' <<<"$own")
-live=$(jq -c --arg me "$session" --arg space "$space" --argjson reg "$registry" 'map(select(.space == $space and .session != $me and $reg[.session] != null))' <<<"$terminals")
+live=$(jq -c --arg me "$HC_TERMINAL_ID" --arg space "$space" --argjson reg "$registry" 'map(select(.space == $space and .address != $me and $reg[.session] != null))' <<<"$terminals")
 
+# Decided on the first event that finds no role, so a session whose terminal was not labelled yet still gets one.
 role="$own_role"
-if [ "$event" = SessionStart ]; then
+if [ "$event" = SessionStart ] || [ -z "$own_role" ]; then
   has_others=$(jq -r 'length > 0' <<<"$live")
   role=$(decide_role "$own_role" "$has_others")
   if [ "$role" != "$own_role" ]; then
