@@ -43,7 +43,7 @@ export function readTail(text) {
       if (part.type !== "tool_use") continue;
       result.lastTool = toolSummary(part.name, part.input);
       if (part.name === "SendMessage" && part.input?.to) {
-        result.sent.push({ at: Date.parse(record.timestamp) || 0, to: part.input.to, text: clip(oneLine(part.input.message), 160) });
+        result.sent.push({ at: Date.parse(record.timestamp) || 0, to: part.input.to, text: clip(String(part.input.message ?? "").trim(), 600) });
       }
     }
   }
@@ -67,3 +67,12 @@ export function chattyPairs(feed, now, { max = 6, windowMs = 10 * 60 * 1000 } = 
   }
   return [...counts].filter(([, n]) => n > max).map(([pair]) => pair);
 }
+
+/** The first line of a message's text: all that shows until the message is expanded. */
+export const firstLine = (text) => String(text ?? "").trim().split("\n")[0];
+
+/** A message's identity across refreshes, for remembering which ones are expanded. */
+export const messageKey = (m) => `${m.at}:${m.from}:${m.to}`;
+
+/** The header count, such as "12 messages". */
+export const feedCount = (n) => `${n} message${n === 1 ? "" : "s"}`;

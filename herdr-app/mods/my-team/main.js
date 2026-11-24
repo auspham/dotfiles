@@ -5,6 +5,7 @@ import { v_flex, h_flex } from "gpui-base";
 import { checking, exec, focused, readTextFile, run, terminals, theme } from "herdr";
 import { coordinatorBadge, reviewChip, taskLine } from "./badges.js";
 import { chattyPairs, messageFeed, readTail } from "./feed.js";
+import { messagesSection } from "./feed_view.js";
 import { coordinatorControls } from "./controls.js";
 import { knowledgeSection } from "./knowledge_view.js";
 import { childSummary, parseSessions, resolveTarget, spaceName, teamCards } from "./roster.js";
@@ -22,6 +23,7 @@ export default class Team extends View {
   init(_props, cx) {
     this.sessions = new Map(); this.tails = new Map(); this.paths = new Map();
     this.cards = []; this.loading = false; this.spaces = {}; this.menu = null;
+    this.messages = { open: true, expanded: new Set() };
     this.knowledge = { open: false, notes: null, children: null, note: "" };
     if (checking()) return;
     this.refresh(cx);
@@ -126,25 +128,15 @@ export default class Team extends View {
       .child(div().min_w(0).truncate().text_size(11.5).text_color(c.question ? t.blocked : t.muted).child(line || "Nothing yet"));
   }
 
-  feedRows(t, feed) {
+  feedSection(t) {
     // The coordinator reads "Coordinator": its tab name is whatever it happens to be working on.
     const labels = new Map(this.cards.map((c) => [c.name, c.role === "coordinator" ? "Coordinator" : c.label]));
-    const show = (name) => labels.get(name) ?? name;
-    if (!feed.length) return [div().w_full().min_w(0).text_size(11.5).text_color(t.dim).child("No messages yet. Agents message each other with SendMessage.")];
-    // Sender and receiver on one line, the text under it using the full width and wrapping: nothing is cut at a narrow width.
-    return feed.map((m, i) => v_flex().id(`msg-${i}`).w_full().min_w(0).gap(1).text_size(11.5)
-      .child(div().w_full().min_w(0).font_semibold().text_color(t.foreground).child(`${show(m.from)} → ${show(resolveTarget(m.to, this.sessions))}`))
-      .child(div().w_full().min_w(0).text_color(t.muted).child(m.text)));
-  }
-
-  feedSection(t) {
-    const feed = messageFeed([...this.tails.values()]);
-    const chatty = chattyPairs(feed, Date.now());
-    return v_flex().w_full().min_w(0).gap(8).mt(6)
-      .child(div().text_size(11).font_semibold().text_color(t.dim).child("Messages between agents"))
-      .when(chatty.length > 0, (e) => e.child(div().w_full().min_w(0).p(7).rounded(6).bg(t.blocked + "26").text_size(11.5).text_color(t.blocked)
-        .child(`${chatty.join(", ")} are messaging a lot. If it is a loop, tell one of them to stop.`)))
-      .children(this.feedRows(t, feed));
+    const who = (name) => labels.get(name) ?? name;
+    const feed = messageFeed([...this.tails.values()]).map((m) => ({ ...m, to: resolveTarget(m.to, this.sessions) }));
+    return messagesSection(t, { ...this.messages, feed, chatty: chattyPairs(feed, Date.now()), who }, {
+      onToggle: (_e, cx) => { this.messages.open = !this.messages.open; cx.notify(); },
+      onExpand: (key, cx) => { const s = this.messages.expanded; if (!s.delete(key)) s.add(key); cx.notify(); },
+    });
   }
 
   render() {

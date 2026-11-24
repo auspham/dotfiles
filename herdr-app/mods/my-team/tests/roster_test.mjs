@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { chattyPairs, messageFeed, readTail, toolSummary } from "../feed.js";
+import { chattyPairs, feedCount, firstLine, messageFeed, messageKey, readTail, toolSummary } from "../feed.js";
 import { childSummary, displayName, resolveTarget, parseSessions, spaceName, teamCards } from "../roster.js";
 import { MODELS, labelChanges, parseSettings, pickCoordinator, settingsFor, withSetting } from "../settings.js";
 
@@ -54,7 +54,7 @@ const tail = readTail([
 ].join("\n"));
 assert.equal(tail.lastTool, "SendMessage to api-agent");
 assert.equal(tail.lastText, "Looking at it");
-assert.deepEqual(tail.sent.map((m) => [m.to, m.text]), [["api-agent", "Does the login test pass?"]]);
+assert.deepEqual(tail.sent.map((m) => [m.to, m.text]), [["api-agent", "Does the\nlogin test pass?"]]);
 assert.deepEqual(readTail(""), { lastTool: null, lastText: "", sent: [] });
 
 const feed = messageFeed([
@@ -110,5 +110,13 @@ const withSocket = parseSessions([JSON.stringify({ sessionId: "s7", name: "api-a
 assert.equal(resolveTarget("uds:/run/user/1000/cc-socks/42.sock", withSocket), "api-agent", "a socket address becomes the session's name");
 assert.equal(resolveTarget("uds:/run/user/1000/cc-socks/99.sock", withSocket), "a closed session", "an address nobody owns is not shown raw");
 assert.equal(resolveTarget("api-agent", withSocket), "api-agent", "a name is kept");
+
+const multi = readTail(JSON.stringify({ type: "assistant", timestamp: "2026-01-01T00:00:00Z", message: { content: [{ type: "tool_use", name: "SendMessage", input: { to: "b", message: "first line\nsecond line" } }] } }));
+assert.equal(multi.sent[0].text, "first line\nsecond line", "a message keeps its line breaks");
+assert.equal(firstLine(multi.sent[0].text), "first line", "a message shows only its first line until expanded");
+assert.equal(firstLine(null), "");
+assert.equal(feedCount(12), "12 messages", "the feed count is shown in the header");
+assert.equal(feedCount(1), "1 message");
+assert.notEqual(messageKey({ at: 1, from: "a", to: "b" }), messageKey({ at: 2, from: "a", to: "b" }), "messages have distinct keys");
 
 console.log("my-team roster and feed: all checks passed");
