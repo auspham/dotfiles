@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Drops the claude.session label when Claude is exited on purpose, so a
+# Drops the claude.session and role labels when Claude is exited on purpose, so a
 # recovered shell only resumes sessions that were cut off (reboot, core restart).
 set -u
 
@@ -20,4 +20,5 @@ esac
 current=$(hc get "$HC_TERMINAL_ID" --json 2>/dev/null | jq -r '.labels["claude.session"] // empty')
 [ "$current" = "$session" ] || exit 0
 
-hc label "$HC_TERMINAL_ID" "claude.session=" >/dev/null 2>&1 || true
+# The role goes too, so the next agent started in this space can become its coordinator.
+hc label "$HC_TERMINAL_ID" "claude.session=" "role=" "coord=" >/dev/null 2>&1 || true
