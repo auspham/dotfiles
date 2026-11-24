@@ -6,9 +6,10 @@ import { checking, exec, focused, readTextFile, run, terminals, theme } from "he
 import { coordinatorBadge, reviewChip, taskLine } from "./badges.js";
 import { chattyPairs, messageFeed, readTail } from "./feed.js";
 import { coordinatorControls } from "./controls.js";
+import { knowledgeSection } from "./knowledge_view.js";
 import { childSummary, parseSessions, resolveTarget, spaceName, teamCards } from "./roster.js";
 import { labelChanges, settingsFor, withSetting } from "./settings.js";
-import { applyLabels, readSettings, writeSettings } from "./store.js";
+import { applyLabels, openInZed, readKnowledge, readSettings, writeSettings } from "./store.js";
 
 const REFRESH_MS = 3000;
 const TAIL_LINES = 150;
@@ -21,6 +22,7 @@ export default class Team extends View {
   init(_props, cx) {
     this.sessions = new Map(); this.tails = new Map(); this.paths = new Map();
     this.cards = []; this.loading = false; this.spaces = {}; this.menu = null;
+    this.knowledge = { open: false, notes: null, children: null, note: "" };
     if (checking()) return;
     this.refresh(cx);
     cx.timer.every(REFRESH_MS, (cx) => this.refresh(cx));
@@ -34,6 +36,7 @@ export default class Team extends View {
       try {
         await this.loadSessions();
         await this.loadSettings();
+        await this.loadKnowledge();
         await this.loadTails();
       } finally {
         this.loading = false;
@@ -46,6 +49,20 @@ export default class Team extends View {
     const files = (await exec("sh", ["-c", LIST_SESSIONS]).catch(() => ({ stdout: "" }))).stdout.split("\n").filter(Boolean);
     const texts = await Promise.all(files.map((file) => readTextFile(file).catch(() => null)));
     this.sessions = parseSessions(texts.filter(Boolean));
+  }
+
+  async loadKnowledge() {
+    const { dir, notes, children } = await readKnowledge(focused()?.space);
+    this.knowledgeDir = dir;
+    Object.assign(this.knowledge, { notes, children });
+  }
+
+  openKnowledge(cx) {
+    if (!this.knowledgeDir) return;
+    cx.spawn(async (cx) => {
+      this.knowledge.note = await openInZed(this.knowledgeDir);
+      cx.notify();
+    });
   }
 
   async loadSettings() {
@@ -144,6 +161,10 @@ export default class Team extends View {
         onModel: (model, cx) => this.save(spaceId, { model }, cx),
         onEffort: (effort, cx) => this.save(spaceId, { effort }, cx),
         onOpen: (menu, cx) => { this.menu = menu; cx.notify(); },
+      }))
+      .child(knowledgeSection(t, this.knowledge, {
+        onToggle: (_e, cx) => { this.knowledge.open = !this.knowledge.open; cx.notify(); },
+        onZed: (_e, cx) => this.openKnowledge(cx),
       }))
       .child(v_flex().id("team-list").flex_1().min_h(0).overflow_y_scroll().p(8).gap(7)
         .children(this.cards.map((c) => this.card(t, c)))
