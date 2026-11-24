@@ -84,6 +84,15 @@ ls_out=$(run ls); grep -q 'login-fix .*working .*pending .*1 file changed' <<<"$
 diff_out=$(run diff login-fix); grep -q '^+two' <<<"$diff_out" || fail "diff shows the child's changes"
 stat_out=$(run diff login-fix --stat); grep -q 'b.txt' <<<"$stat_out" || fail "diff can show just the stat"
 
+run spawn forked "Forked task" >/dev/null
+echo sibling > "$repo/sibling.txt"; git -C "$repo" add sibling.txt; git -C "$repo" -c user.email=a@b -c user.name=t commit -q -m "sibling merged"
+echo mine > "$repo/.agent-worktrees/forked/mine.txt"; git -C "$repo/.agent-worktrees/forked" add mine.txt
+merged_diff=$(run diff forked)
+grep -q '^+mine' <<<"$merged_diff" || fail "diff ignores work merged into the base after the child forked: own work is missing"
+grep -q 'sibling' <<<"$merged_diff" && fail "diff ignores work merged into the base after the child forked"
+run ls | grep -q 'forked .*1 file changed' || fail "diff ignores work merged into the base after the child forked: ls counts only the child's work"
+run kill forked --worktree --force >/dev/null; : > "$root/calls.log"
+
 run review login-fix changes "too big" && [ "$(jq -r '.labels.review' "$fx/$terminal.json")" = changes ] || fail "review sets the label"
 [ "$(jq -r '.labels.review_note' "$fx/$terminal.json")" = "too big" ] || fail "with its note"
 long=$(printf 'n%.0s' $(seq 1 300))

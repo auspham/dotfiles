@@ -72,8 +72,10 @@ cmd_spawn() {
   jq -cn --arg name "$name" --arg terminal "$terminal" --arg worktree "$worktree" --arg branch "agent/$name" '{name: $name, terminal: $terminal, worktree: $worktree, branch: $branch}'
 }
 
-# Everything the child has changed against where it started, committed or not.
-shortstat() { git -C "$1" diff --shortstat "$2" 2>/dev/null | sed 's/^ *//'; }
+# Where the child forked from its base, so work merged into the base since then is not counted against it.
+fork_point() { git -C "$1" merge-base HEAD "$2" 2>/dev/null || echo "$2"; }
+# Everything the child has changed since it forked, committed or not.
+shortstat() { git -C "$1" diff --shortstat "$(fork_point "$1" "$2")" 2>/dev/null | sed 's/^ *//'; }
 
 cmd_ls() {
   local t info rows=()
@@ -91,7 +93,7 @@ cmd_diff() {
   local t worktree base; t=$(child_of "${1:?name}")
   worktree=$(label_of "$t" worktree); base=$(label_of "$t" base)
   git -C "$worktree" status --short
-  git -C "$worktree" diff ${2:+--stat} "$base"
+  git -C "$worktree" diff ${2:+--stat} "$(fork_point "$worktree" "$base")"
 }
 
 cmd_review() {
