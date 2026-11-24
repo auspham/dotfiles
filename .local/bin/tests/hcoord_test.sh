@@ -116,6 +116,34 @@ run spawn clean-one "Another task" >/dev/null
 run kill clean-one --worktree >/dev/null
 [ ! -d "$repo/.agent-worktrees/clean-one" ] || fail "a clean worktree is removed without force"
 
+# Handing a reviewed child to the user.
+run spawn shipped "Ship it" >/dev/null
+ship_t=$(event spawn shipped | jq -r .terminal); ship="$repo/.agent-worktrees/shipped"
+tab=$'\t'
+git -C "$ship" -c user.email=a@b -c user.name=t commit -q --allow-empty -m empty
+echo more >> "$ship/a.txt"; printf 'x\n' > "$ship/new.txt"; printf '\0\1' > "$ship/bin.dat"; git -C "$ship" add -A
+git -C "$ship" -c user.email=a@b -c user.name=t commit -q -m "work"
+echo sibling2 > "$repo/sibling2.txt"; git -C "$repo" add sibling2.txt; git -C "$repo" -c user.email=a@b -c user.name=t commit -q -m "sibling again"
+echo scratch > "$ship/scratch.txt"
+printf 'high%sa.txt%sbehaviour change\n' "$tab" "$tab" | run handoff shipped 2>/dev/null && fail "handoff refuses uncommitted work"
+rm "$ship/scratch.txt"
+printf 'high%sa.txt%sbehaviour change\n' "$tab" "$tab" | run handoff shipped --summary "all done" || fail "handoff runs on committed work"
+guide=$(jq -r .labels.guide "$fx/$ship_t.json")
+[ "$(jq -r '.files | map(.path + "=" + .sig) | sort | join(" ")' "$guide")" = "a.txt=M:1:0 bin.dat=A:-:- new.txt=A:1:0" ] || { jq . "$guide" >&2; fail "handoff writes a guide the Changes tab can match"; }
+[ "$(jq -r '.base' "$guide")" = "$(git -C "$ship" merge-base HEAD main)" ] && [ "$(jq -r '.head' "$guide")" = "$(git -C "$ship" rev-parse HEAD)" ] || fail "the guide names the fork point and the head"
+[ "$(jq -r '.files[] | select(.path == "a.txt") | .level + .reason' "$guide")" = "highbehaviour change" ] || fail "the guide keeps the coordinator's level and reason"
+[ "$(jq -r '.files[] | select(.path == "new.txt") | .level + "|" + .reason' "$guide")" = "normal|not in the coordinator's guide" ] || fail "a file left out of the guide is normal"
+[ "$(jq -r '.summary + .name + .branch' "$guide")" = "all doneshippedagent/shipped" ] || fail "the guide carries the summary and the branch"
+[ "$(jq -r '.labels.review' "$fx/$ship_t.json")" = yours ] || fail "handoff marks the child as the user's turn"
+[ "$(event handoff shipped | jq -r .guide)" = "$guide" ] || fail "handoff is recorded in the ledger"
+before=$(cat "$guide")
+printf 'urgent%sa.txt%swhy\n' "$tab" "$tab" | run handoff shipped 2>/dev/null && fail "a bad guide line writes nothing: unknown level"
+printf 'high%snope.txt%swhy\n' "$tab" "$tab" | run handoff shipped 2>/dev/null && fail "a bad guide line writes nothing: path not changed"
+printf 'high a.txt no tabs\n' | run handoff shipped 2>/dev/null && fail "a bad guide line writes nothing: malformed"
+[ "$(cat "$guide")" = "$before" ] && [ ! -e "$guide.tmp" ] || fail "a bad guide line writes nothing"
+run review shipped yours && [ "$(jq -r '.labels.review' "$fx/$ship_t.json")" = yours ] || fail "review accepts yours"
+run kill shipped --worktree >/dev/null
+
 # A new coordinator takes over children left by a dead one.
 run spawn heir "Heir task" >/dev/null
 heir_t=$(event spawn heir | jq -r .terminal)
