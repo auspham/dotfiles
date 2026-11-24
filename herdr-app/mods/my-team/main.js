@@ -1,16 +1,14 @@
-// Team: the agents that share this herdr space, what each is doing, their messages to each other,
-// and a box to guide one of them.
+// Team: the agents that share this herdr space, what each is doing, and their messages to each other.
 
 import { View, div, svg } from "gpui-kit";
-import { v_flex, h_flex, InputState, Input } from "gpui-base";
-import { checking, exec, focused, hc, readTextFile, run, terminals, theme } from "herdr";
+import { v_flex, h_flex } from "gpui-base";
+import { checking, exec, focused, readTextFile, run, terminals, theme } from "herdr";
 import { chattyPairs, messageFeed, readTail } from "./feed.js";
 import { parseSessions, spaceName, teamCards } from "./roster.js";
 
 const REFRESH_MS = 3000;
 const TAIL_LINES = 150;
 const MAX_AGENTS = 8;
-const NOTE_MS = 5000;
 
 const LIST_SESSIONS = 'ls "$HOME"/.claude/sessions/*.json 2>/dev/null';
 const FIND_TRANSCRIPT = 'ls "$HOME"/.claude/projects/*/"$1".jsonl 2>/dev/null | head -1';
@@ -18,9 +16,7 @@ const FIND_TRANSCRIPT = 'ls "$HOME"/.claude/projects/*/"$1".jsonl 2>/dev/null | 
 export default class Team extends View {
   init(_props, cx) {
     this.sessions = new Map(); this.tails = new Map(); this.paths = new Map();
-    this.cards = []; this.target = null; this.note = ""; this.noteAt = 0; this.loading = false;
-    this.draft = InputState.new({ placeholder: "Message the selected agent" });
-    this.draft.on("submit", (_e, cx) => this.send(cx));
+    this.cards = []; this.loading = false;
     if (checking()) return;
     this.refresh(cx);
     cx.timer.every(REFRESH_MS, (cx) => this.refresh(cx));
@@ -28,7 +24,6 @@ export default class Team extends View {
 
   // Reads the live session registry (names, never the credential files beside it) and each agent's transcript tail.
   refresh(cx) {
-    if (this.note && Date.now() - this.noteAt > NOTE_MS) { this.note = ""; cx.notify(); }
     if (this.loading) return;
     this.loading = true;
     cx.spawn(async (cx) => {
@@ -65,25 +60,6 @@ export default class Team extends View {
       if (out) tails.set(card.address, { name: card.name, tail: readTail(out.stdout) });
     }));
     this.tails = tails;
-  }
-
-  // Guiding an agent is you typing to it, so it goes through hc send, like typing in its terminal.
-  send(cx) {
-    const text = this.draft.value().trim();
-    const card = this.cards.find((c) => c.address === this.target);
-    if (!text) return;
-    if (!card) return this.tell("Pick an agent first.", cx);
-    this.draft.set_value("");
-    cx.spawn(async (cx) => {
-      const result = await hc(["send", card.address, text]).catch(() => ({ code: 1 }));
-      this.tell(result.code === 0 ? `Sent to ${card.name}.` : `Could not send to ${card.name}.`, cx);
-    });
-  }
-
-  // The note fades on a later refresh, so no timer of its own is needed.
-  tell(note, cx) {
-    this.note = note; this.noteAt = Date.now();
-    cx.notify();
   }
 
   statusMark(t, status) {
@@ -123,37 +99,16 @@ export default class Team extends View {
       .children(this.feedRows(t, feed));
   }
 
-  chip(t, c) {
-    const on = c.address === this.target;
-    return div().id(`to-${c.address}`).h(24).px(9).flex().items_center().rounded(6).text_size(11.5).cursor_pointer()
-      .bg(on ? t.solid : t.raised).text_color(on ? t.solid_foreground : t.muted)
-      .on_click((_e, cx) => { this.target = c.address; cx.notify(); }).child(c.name);
-  }
-
-  composer(t) {
-    return v_flex().flex_none().p(10).gap(7).border_t(1).border_color(t.border)
-      .child(h_flex().gap(5).flex_wrap().children(this.cards.map((c) => this.chip(t, c))))
-      .child(h_flex().gap(8)
-        .child(div().id("team-box").flex_1().min_w(0).h(32).px(10).flex().items_center().rounded(8).border_1().border_color(t.border).cursor_text()
-          .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
-          .child(Input.new(this.draft).h_full().text_size(12).text_color(t.foreground)))
-        .child(div().id("team-send").h(32).px(14).flex().items_center().rounded(8).text_size(12).cursor_pointer()
-          .bg(t.solid).text_color(t.solid_foreground).on_click((_e, cx) => this.send(cx)).child("Send")))
-      .when(Boolean(this.note), (e) => e.child(div().text_size(11).text_color(t.dim).child(this.note)));
-  }
-
   render() {
     const t = theme();
     const all = terminals();
     const spaceId = focused()?.space;
     this.cards = teamCards({ terminals: all, sessions: this.sessions, spaceId });
-    if (!this.cards.some((c) => c.address === this.target)) this.target = this.cards[0]?.address ?? null;
     const heading = `${spaceName(all, spaceId) || "This space"} · ${this.cards.length} agent${this.cards.length === 1 ? "" : "s"}`;
     return v_flex().size_full().text_size(12)
       .child(div().flex_none().h(36).px(12).flex().items_center().border_b(1).border_color(t.border).font_semibold().text_color(t.foreground).child(heading))
       .child(v_flex().id("team-list").flex_1().min_h(0).overflow_y_scroll().p(8).gap(7)
         .children(this.cards.map((c) => this.card(t, c)))
-        .child(this.feedSection(t)))
-      .child(this.composer(t));
+        .child(this.feedSection(t)));
   }
 }
