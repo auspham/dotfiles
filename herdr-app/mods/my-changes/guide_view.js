@@ -30,10 +30,12 @@ export class GuideSource {
   }
 
   /** Tells the coordinator the focused child is reviewed, then reloads. @param {any} host the Changes view @param {any} cx */
-  async finish(host, cx) {
-    const done = await exec("hc", ["label", this.address, "review=reviewed", "review_note=Reviewed by you"]).catch(() => null);
-    this.note = done?.code === 0 ? "" : "Could not mark it reviewed";
-    if (done?.code === 0) host.refresh(cx); else cx.notify();
+  finish(host, cx) {
+    cx.spawn(async (cx) => {
+      const done = await exec("hc", ["label", this.address, "review=reviewed", "review_note=Reviewed by you"]).catch(() => null);
+      this.note = done?.code === 0 ? "" : "Could not mark it reviewed";
+      if (done?.code === 0) host.refresh(cx); else cx.notify();
+    });
   }
 
   /** @param {string} path @param {string} sig @returns {import("./guide.js").GuideEntry | null} */
