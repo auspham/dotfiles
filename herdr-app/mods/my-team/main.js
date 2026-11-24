@@ -52,13 +52,12 @@ export default class Team extends View {
     this.spaces = await readSettings();
   }
 
-  // Re-reads first so an edit made elsewhere since the last refresh is not overwritten.
-  async save(spaceId, patch, cx) {
-    this.spaces = await readSettings();
-    const text = withSetting(this.spaces, spaceId, patch);
-    this.spaces = JSON.parse(text).spaces;
+  // The screen updates at once, while cx is still valid; the file is then re-read and written so an edit
+  // made elsewhere since the last refresh is not overwritten. cx is never used after an await.
+  save(spaceId, patch, cx) {
+    this.spaces = JSON.parse(withSetting(this.spaces, spaceId, patch)).spaces;
     cx.notify();
-    await writeSettings(text);
+    return readSettings().then((fresh) => writeSettings(withSetting(fresh, spaceId, patch)));
   }
 
   // The hook and hcoord read the file; the role label on the leading agent is what the panel and sidebar show.
