@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { chattyPairs, messageFeed, readTail, toolSummary } from "../feed.js";
 import { childSummary, displayName, parseSessions, spaceName, teamCards } from "../roster.js";
+import { MODELS, labelChanges, parseSettings, pickCoordinator, settingsFor, withSetting } from "../settings.js";
 
 const term = (address, space, session, over = {}) => ({
   address, agent: "claude-code", status: "idle", state: "live", turn: 3, title: `title ${address}`,
@@ -82,5 +83,24 @@ assert.equal(childSummary([lead].map(() => ({ role: "coordinator" }))), "", "no 
 assert.equal(childSummary(kids(["working", "pending"], ["working", "pending"], ["idle", "pending"])), "2 working, 1 ready for review");
 assert.equal(childSummary(kids(["idle", "approved"])), "1 child, nothing waiting");
 assert.equal(childSummary(kids(["idle", "changes"])), "1 child, nothing waiting", "a child sent back is not waiting for review");
+
+assert.deepEqual(settingsFor(parseSettings(""), "spA"), { enabled: false, model: "" }, "an empty or broken file means off");
+assert.deepEqual(settingsFor(parseSettings("{ nope"), "spA"), { enabled: false, model: "" });
+const saved = withSetting({}, "spA", { enabled: true });
+assert.deepEqual(settingsFor(parseSettings(saved), "spA"), { enabled: true, model: "" }, "switching a space on is remembered");
+assert.equal(settingsFor(parseSettings(saved), "spB").enabled, false, "other spaces stay off");
+const picked = withSetting(parseSettings(saved), "spA", { model: "haiku" });
+assert.deepEqual(settingsFor(parseSettings(picked), "spA"), { enabled: true, model: "haiku" }, "a model choice keeps the switch");
+assert.equal(settingsFor({ spA: { enabled: true, model: "gpt" } }, "spA").model, "", "an unknown model is ignored");
+assert.ok(MODELS.every((m) => typeof m.label === "string"));
+assert.equal(pickCoordinator([{ address: "t1" }, { address: "t2" }], "t2").address, "t2", "the focused agent leads");
+assert.equal(pickCoordinator([{ address: "t1" }, { address: "t2" }], "t9").address, "t1", "else the first");
+assert.equal(pickCoordinator([], "t1"), null);
+
+const trio = [{ address: "t1", role: "" }, { address: "t2", role: "" }];
+assert.deepEqual(labelChanges(trio, true, "t2"), [["t2", "role=coordinator"]], "switching on picks the focused agent");
+assert.deepEqual(labelChanges([{ address: "t1", role: "coordinator" }, trio[1]], true, "t2"), [], "an existing coordinator is kept");
+assert.deepEqual(labelChanges([{ address: "t1", role: "coordinator" }, { address: "t2", role: "child" }, trio[0]], false, "t1"), [["t1", "role="], ["t1", "coord="], ["t2", "role="], ["t2", "coord="]], "switching off clears every role");
+assert.deepEqual(labelChanges([], true, "t1"), [], "nobody to lead, nothing to label");
 
 console.log("my-team roster and feed: all checks passed");

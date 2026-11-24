@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # hcoord: how a coordinator agent launches, watches and stops its child agents in herdr.
 # Each child gets its own tab and its own git worktree, so parallel work never clashes.
-#   hcoord spawn <name> "<task>" [--model M] [--repo DIR] [--base BRANCH]
+#   hcoord spawn <name> "<task>" [--model M] [--repo DIR] [--base BRANCH]   (model: the Team panel's choice unless given)
 #   hcoord ls [--json]          hcoord diff <name> [--stat]
 #   hcoord review <name> approved|changes|pending [note]
 #   hcoord kill <name> [--worktree] [--force]
@@ -14,6 +14,13 @@ me="${HC_TERMINAL_ID:-}"
 
 children() { hc ls --json --label role=child --label "coord=$me" | jq -r '.terminals[].address'; }
 label_of() { hc get "$1" --json | jq -r --arg k "$2" '.labels[$k] // empty'; }
+
+# The model the user picked in the Team panel for this space, empty for Claude's own default.
+default_model() {
+  local space file="${HERDR_TEAM_SETTINGS:-$HOME/.config/herdr-team/coordinator.json}"
+  space=$(hc get "$me" --json 2>/dev/null | jq -r '.labels["herdr.space"] // empty' 2>/dev/null || true)
+  jq -r --arg s "$space" '.spaces[$s].model // empty' "$file" 2>/dev/null || true
+}
 
 # The terminal of the child with this task name.
 child_of() {
@@ -33,6 +40,7 @@ cmd_spawn() {
     case "$1" in --model) model="$2" ;; --repo) repo="$2" ;; --base) base="$2" ;; *) die "unknown option $1" ;; esac
     shift 2
   done
+  [ -n "$model" ] || model=$(default_model)
   local root; root=$(git -C "$repo" rev-parse --show-toplevel 2>/dev/null) || die "$repo is not in a git repository"
   base="${base:-$(git -C "$root" symbolic-ref --short HEAD 2>/dev/null || git -C "$root" rev-parse --short HEAD)}"
   if (child_of "$name") >/dev/null 2>&1; then die "a child named $name already exists"; fi

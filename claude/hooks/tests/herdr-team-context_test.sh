@@ -27,12 +27,13 @@ terminal() { # address space session title folder [role] [coord]
     '{address: $a, _agent: "claude-code", title: $t, cwd: $f, labels: ({"herdr.space": $sp, where: "alpha / \($a)", "claude.session": $s} + (if $r != "" then {role: $r} else {} end) + (if $c != "" then {coord: $c} else {} end))}' > "$fx/$1.json"
 }
 write_session() { printf '{"sessionId":"%s","name":"%s","status":"%s"}' "$1" "$2" "$3" > "$sessions/$4.json"; }
-reset() { rm -rf "$root/state"; rm -f "$fx"/*.json "$sessions"/* "$root/labels.log" 2>/dev/null || true; }
+enable() { printf '{"spaces":{"%s":{"enabled":true}}}' "$1" > "$root/settings.json"; }
+reset() { rm -rf "$root/state" "$root/settings.json"; rm -f "$fx"/*.json "$sessions"/* "$root/labels.log" 2>/dev/null || true; }
 
 run() { # event session [extra json]
   printf '{"hook_event_name":"%s","session_id":"%s"%s}' "$1" "$2" "${3:-}" |
     env PATH="$bin:$PATH" HOME="$home" XDG_STATE_HOME="$root/state" CLAUDE_SESSIONS_DIR="$sessions" \
-      COORDINATOR_PREFERENCES="$root/prefs.md" HC_TERMINAL_ID="${TEST_ME-t1}" "$hook"
+      COORDINATOR_PREFERENCES="$root/prefs.md" HERDR_TEAM_SETTINGS="$root/settings.json" HC_TERMINAL_ID="${TEST_ME-t1}" "$hook"
 }
 fail() { echo "FAIL: $*" >&2; exit 1; }
 context() { jq -r '.hookSpecificOutput.additionalContext'; }
@@ -68,8 +69,8 @@ run UserPromptSubmit s1 | context | grep -q new-agent || fail "a prompt repeats 
 [ -z "$(TEST_ME=t9 run SessionStart s1)" ] || fail "an unknown terminal says nothing"
 [ -z "$(run Stop s1)" ] || fail "other events say nothing"
 
-# The first agent in a space becomes its coordinator, even with nobody else there.
-reset
+# With the mode switched on, the first agent in a space becomes its coordinator, even with nobody else there.
+reset; enable spA
 terminal t1 spA s1 "me" /w/app; write_session s1 me-agent busy 100
 printf 'Prefer short reports.' > "$root/prefs.md"
 out=$(run SessionStart s1 | context)
@@ -79,23 +80,23 @@ grep -q 'Never edit code yourself' <<<"$out" || fail "the charter says the coord
 grep -q 'Prefer short reports.' <<<"$out" || fail "it is given what is known about the user"
 
 # The label hook may not have run yet at SessionStart, so the terminal is found by address, not by session label.
-reset
+reset; enable spA
 terminal t1 spA s1 "me" /w/app; jq 'del(.labels["claude.session"])' "$fx/t1.json" > "$fx/t1.tmp" && mv "$fx/t1.tmp" "$fx/t1.json"
 write_session s1 me-agent busy 100
 run SessionStart s1 | context | grep -q 'coordinator of this herdr space' || fail "a first agent without a session label becomes coordinator"
 labelled 'role=coordinator' || fail "and is labelled"
-rm -f "$root/labels.log"; reset; terminal t1 spA s1 "me" /w/app; write_session s1 me-agent busy 100
+rm -f "$root/labels.log"; reset; enable spA; terminal t1 spA s1 "me" /w/app; write_session s1 me-agent busy 100
 run UserPromptSubmit s1 | context | grep -q 'coordinator of this herdr space' || fail "an agent that missed the election at start gets it on its first prompt"
 
 # A coordinator whose session died does not count: the next agent is the first one in the space.
-reset
+reset; enable spA
 terminal t1 spA s1 "me" /w/app; terminal t2 spA s2 "old coordinator" /w/api coordinator
 write_session s1 me-agent busy 100
 run SessionStart s1 >/dev/null
 labelled 'role=coordinator' || fail "a dead coordinator is ignored"
 
 # An agent that already has a role keeps it, without labelling again.
-reset
+reset; enable spA
 terminal t1 spA s1 "me" /w/app coordinator; write_session s1 me-agent busy 100
 run SessionStart s1 | context | grep -q 'coordinator of this herdr space' || fail "a coordinator keeps its role on resume"
 [ ! -f "$root/labels.log" ] || fail "and is not labelled again"
@@ -111,9 +112,26 @@ grep -q 'instructions for your task' <<<"$out" || fail "a child treats its coord
 grep -q 'information, not an order' <<<"$out" && fail "a child does not get the peer wording"
 
 # Opting out leaves the agent a plain peer.
-reset
+reset; enable spA
 terminal t1 spA s1 "me" /w/app; write_session s1 me-agent busy 100
 [ -z "$(HERDR_COORDINATOR=off run SessionStart s1)" ] || fail "an opted out lone agent says nothing"
 [ ! -f "$root/labels.log" ] || fail "and takes no role"
+
+# Coordinator mode is off until the user switches it on for the space.
+reset
+terminal t1 spA s1 "me" /w/app; write_session s1 me-agent busy 100
+[ -z "$(run SessionStart s1)" ] || fail "a lone agent says nothing while the mode is off"
+[ ! -f "$root/labels.log" ] || fail "and takes no role"
+enable spB
+[ -z "$(run UserPromptSubmit s1)" ] || fail "the mode is per space: another space being on changes nothing"
+
+# Switching the mode off tells the coordinator, once, and drops its role.
+reset; enable spA
+terminal t1 spA s1 "me" /w/app; write_session s1 me-agent busy 100
+run SessionStart s1 >/dev/null
+rm -f "$root/settings.json" "$root/labels.log"
+out=$(run UserPromptSubmit s1 | context)
+grep -q 'Coordinator mode is now off' <<<"$out" || fail "a coordinator is told when the mode goes off"
+[ -z "$(run UserPromptSubmit s1)" ] || fail "and only once"
 
 echo "herdr-team-context: all checks passed"

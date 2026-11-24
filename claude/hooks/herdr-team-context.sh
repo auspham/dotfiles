@@ -20,6 +20,8 @@ case "$event" in SessionStart | UserPromptSubmit) ;; *) exit 0 ;; esac
 sessions_dir="${CLAUDE_SESSIONS_DIR:-$HOME/.claude/sessions}"
 state_dir="${XDG_STATE_HOME:-$HOME/.local/state}/herdr-team"
 preferences="${COORDINATOR_PREFERENCES:-$HOME/.claude/coordinator/preferences.md}"
+# Written by the Team panel's Coordinator mode switch, per space.
+settings="${HERDR_TEAM_SETTINGS:-$HOME/.config/herdr-team/coordinator.json}"
 
 # Live sessions by id: name and busy/idle. The .key files beside them hold credentials and are never read.
 registry='{}'
@@ -43,9 +45,10 @@ live=$(jq -c --arg me "$HC_TERMINAL_ID" --arg space "$space" --argjson reg "$reg
 
 # Decided on the first event that finds no role, so a session whose terminal was not labelled yet still gets one.
 role="$own_role"
-if [ "$event" = SessionStart ] || [ -z "$own_role" ]; then
+if [ "$event" = SessionStart ] || [ -z "$own_role" ] || [ "$own_role" = coordinator ]; then
   has_others=$(jq -r 'length > 0' <<<"$live")
-  role=$(decide_role "$own_role" "$has_others")
+  enabled=$(jq -r --arg s "$space" '.spaces[$s].enabled // false' "$settings" 2>/dev/null || echo false)
+  role=$(decide_role "$own_role" "$has_others" "$enabled")
   if [ "$role" != "$own_role" ]; then
     labels=("role=$role")
     [ "$role" != child ] || labels+=("coord=${HERDR_COORD:-}")
@@ -78,6 +81,11 @@ signature="$role|$(jq -r 'map(.session + ":" + .role) | sort | join(",")' <<<"$l
 mkdir -p "$state_dir"
 previous=$(cat "$state_dir/$session.sig" 2>/dev/null || true)
 printf '%s' "$signature" > "$state_dir/$session.sig"
+
+# A coordinator whose mode was switched off is told once that it is an ordinary agent again.
+if [ "${previous%%|*}" = coordinator ] && [ "$role" != coordinator ] && [ "$role" != child ]; then
+  context="Coordinator mode is now off for this space. You are an ordinary agent again: do not launch or direct child agents."
+fi
 
 [ -n "$context" ] || exit 0
 [ "$event" = SessionStart ] || [ "$signature" != "$previous" ] || exit 0

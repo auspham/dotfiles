@@ -5,7 +5,10 @@ import { v_flex, h_flex } from "gpui-base";
 import { checking, exec, focused, readTextFile, run, terminals, theme } from "herdr";
 import { coordinatorBadge, reviewChip, taskLine } from "./badges.js";
 import { chattyPairs, messageFeed, readTail } from "./feed.js";
+import { coordinatorControls } from "./controls.js";
 import { childSummary, parseSessions, spaceName, teamCards } from "./roster.js";
+import { labelChanges, settingsFor, withSetting } from "./settings.js";
+import { applyLabels, readSettings, writeSettings } from "./store.js";
 
 const REFRESH_MS = 3000;
 const TAIL_LINES = 150;
@@ -17,7 +20,7 @@ const FIND_TRANSCRIPT = 'ls "$HOME"/.claude/projects/*/"$1".jsonl 2>/dev/null | 
 export default class Team extends View {
   init(_props, cx) {
     this.sessions = new Map(); this.tails = new Map(); this.paths = new Map();
-    this.cards = []; this.loading = false;
+    this.cards = []; this.loading = false; this.spaces = {};
     if (checking()) return;
     this.refresh(cx);
     cx.timer.every(REFRESH_MS, (cx) => this.refresh(cx));
@@ -30,6 +33,7 @@ export default class Team extends View {
     cx.spawn(async (cx) => {
       try {
         await this.loadSessions();
+        await this.loadSettings();
         await this.loadTails();
       } finally {
         this.loading = false;
@@ -42,6 +46,23 @@ export default class Team extends View {
     const files = (await exec("sh", ["-c", LIST_SESSIONS]).catch(() => ({ stdout: "" }))).stdout.split("\n").filter(Boolean);
     const texts = await Promise.all(files.map((file) => readTextFile(file).catch(() => null)));
     this.sessions = parseSessions(texts.filter(Boolean));
+  }
+
+  async loadSettings() {
+    this.spaces = await readSettings();
+  }
+
+  async save(spaceId, patch, cx) {
+    const text = withSetting(this.spaces, spaceId, patch);
+    this.spaces = JSON.parse(text).spaces;
+    cx.notify();
+    await writeSettings(text);
+  }
+
+  // The hook and hcoord read the file; the role label on the leading agent is what the panel and sidebar show.
+  async setCoordinatorMode(spaceId, on, cx) {
+    await this.save(spaceId, { enabled: on }, cx);
+    await applyLabels(labelChanges(this.cards, on, focused()?.terminal));
   }
 
   async transcriptOf(session) {
@@ -115,6 +136,10 @@ export default class Team extends View {
     const heading = `${spaceName(all, spaceId) || "This space"} · ${this.cards.length} agent${this.cards.length === 1 ? "" : "s"}${summary ? " · " + summary : ""}`;
     return v_flex().size_full().text_size(12)
       .child(div().flex_none().h(36).px(12).flex().items_center().border_b(1).border_color(t.border).font_semibold().text_color(t.foreground).child(heading))
+      .child(coordinatorControls(t, settingsFor(this.spaces, spaceId), {
+        onToggle: (_e, cx) => this.setCoordinatorMode(spaceId, !settingsFor(this.spaces, spaceId).enabled, cx),
+        onModel: (model, cx) => this.save(spaceId, { model }, cx),
+      }))
       .child(v_flex().id("team-list").flex_1().min_h(0).overflow_y_scroll().p(8).gap(7)
         .children(this.cards.map((c) => this.card(t, c)))
         .child(this.feedSection(t)));
