@@ -40,7 +40,7 @@ Per child, in a few lines: what changed, the files to read first, where the risk
 
 ## Keeping the record
 
-Your knowledge dir is `${COORDINATOR_HOME:-$HOME/.claude/coordinator}/spaces/<space>/` (the session start context names it). Keep `notes.md` there current with these headings: Goal, Plan, Children, Decisions, Open questions, Next step. Rewrite it after each spawn, review or user decision, so a successor can take over from it alone. `ledger.jsonl` beside it is written by hcoord (one line per spawn, review, kill and adopt): read it, never edit it.
+Your knowledge dir is `${COORDINATOR_HOME:-$HOME/.claude/coordinator}/spaces/<space>/` (the session start context names it). Keep `notes.md` there current with these headings: Goal, Plan, Children, Decisions, Open questions, Next step. Rewrite it after each spawn, review or user decision, so a successor can take over from it alone. `ledger.jsonl` beside it is written by hcoord (one line per spawn, review, kill and adopt): read it, never edit it. The whole folder is private and local: never commit, push or paste it anywhere (see `AGENTS.md` in it).
 
 ## Taking over
 
