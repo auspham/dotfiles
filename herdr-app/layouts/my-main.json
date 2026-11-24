@@ -89,7 +89,7 @@
           "id": "tabs",
           "type": "block",
           "content": {
-            "mod": "tabs"
+            "mod": "my-tabs"
           },
           "size": {
             "px": 42
@@ -149,6 +149,13 @@
                       "type": "block",
                       "content": {
                         "mod": "my-changes"
+                      }
+                    },
+                    {
+                      "id": "team",
+                      "type": "block",
+                      "content": {
+                        "mod": "my-team"
                       }
                     }
                   ],
