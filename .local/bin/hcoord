@@ -53,7 +53,10 @@ cmd_spawn() {
   local argv message launched terminal
   argv=$(jq -cn --arg me "$me" --arg model "$model" '["env", "HERDR_ROLE=child", "HERDR_COORD=\($me)", "claude"] + (if $model == "" then [] else ["--model", $model] end)')
   message="$task"$'\n\n'"You work in your own git worktree on branch agent/$name, started from $base. Stay inside this folder. Commit your work on that branch when it is done (signed off, Conventional Commits). When you finish or get stuck, tell your coordinator with SendMessage."
-  launched=$(herdr-app do tab.new --name "$name" --folder "$worktree" --argv "$argv" --task "$message" --focus false)
+  # Without --space the tab opens in whichever space is focused, which is not necessarily the coordinator's.
+  local space; space=$(label_of "$me" herdr.space)
+  [ -n "$space" ] || die "cannot tell which herdr space this terminal is in"
+  launched=$(herdr-app do tab.new --name "$name" --space "$space" --folder "$worktree" --argv "$argv" --task "$message" --focus false)
   terminal=$(jq -r '.terminal' <<<"$launched")
   hc label "$terminal" role=child "coord=$me" "task=$name" "worktree=$worktree" "branch=agent/$name" "base=$base" review=pending >/dev/null
   jq -cn --arg name "$name" --arg terminal "$terminal" --arg worktree "$worktree" --arg branch "agent/$name" '{name: $name, terminal: $terminal, worktree: $worktree, branch: $branch}'

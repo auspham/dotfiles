@@ -46,6 +46,7 @@ git init -q -b main "$repo"
 git -C "$repo" -c user.email=a@b -c user.name=t commit -q --allow-empty -m init
 echo one > "$repo/a.txt"; git -C "$repo" add a.txt; git -C "$repo" -c user.email=a@b -c user.name=t commit -q -m "add a"
 
+printf '{"address":"t1","labels":{"herdr.space":"spA"}}' > "$fx/t1.json"
 run() { (cd "$repo" && env PATH="$bin:$PATH" HC_TERMINAL_ID="${TEST_ME-t1}" "$hcoord" "$@"); }
 fail() { echo "FAIL: $*" >&2; exit 1; }
 calls() { cat "$root/calls.log" 2>/dev/null || true; }
@@ -57,9 +58,10 @@ terminal=$(jq -r .terminal <<<"$out")
 [ "$(git -C "$repo/.agent-worktrees/login-fix" branch --show-current)" = agent/login-fix ] || fail "on its own branch"
 grep -qxF '.agent-worktrees/' "$repo/.git/info/exclude" || fail "worktrees stay out of git status"
 [ -z "$(git -C "$repo" status --short)" ] || fail "the repo stays clean"
-calls | grep -q 'tab.new --name login-fix --folder '"$repo"'/.agent-worktrees/login-fix' || fail "the child opens in its own tab, in its worktree"
+calls | grep -q 'tab.new --name login-fix --space spA --folder '"$repo"'/.agent-worktrees/login-fix' || fail "the child opens in its own tab, in its worktree"
 calls | grep -q 'HERDR_ROLE=child' && calls | grep -q 'HERDR_COORD=t1' || { dump; fail "it is launched as a child of the coordinator"; }
 calls | grep -q '"--model","haiku"' || fail "the model option is passed on"
+calls | grep -q -- '--space spA' || fail "the child opens in the coordinator's own space"
 calls | grep -q -- '--focus false' || fail "the new tab does not steal focus"
 calls | grep -q 'Fix the login test' || fail "the task is its first message"
 [ "$(jq -r '.labels.role + .labels.coord + .labels.task + .labels.review' "$fx/$terminal.json")" = "childt1login-fixpending" ] || fail "its labels say what it is"
