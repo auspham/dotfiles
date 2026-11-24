@@ -11,7 +11,17 @@ export const MODELS = [
   { id: "opus", label: "Opus" },
 ];
 
-const OFF = { enabled: false, model: "" };
+/** How hard a child thinks, as `claude --effort` takes it; "" lets Claude use its own default. */
+export const EFFORTS = [
+  { id: "", label: "Default" },
+  { id: "low", label: "Low" },
+  { id: "medium", label: "Medium" },
+  { id: "high", label: "High" },
+  { id: "xhigh", label: "Extra high" },
+  { id: "max", label: "Max" },
+];
+
+const allowed = (options, id) => (options.some((o) => o.id === id) ? id : "");
 
 /** The settings stored in the file's text. Anything unreadable means every space is off. */
 export function parseSettings(text) {
@@ -26,8 +36,7 @@ export function parseSettings(text) {
 /** One space's settings; a space nobody has switched on is off. */
 export function settingsFor(spaces, spaceId) {
   const found = spaces[spaceId];
-  const known = MODELS.some((m) => m.id === found?.model);
-  return { enabled: found?.enabled === true, model: known ? found.model : OFF.model };
+  return { enabled: found?.enabled === true, model: allowed(MODELS, found?.model), effort: allowed(EFFORTS, found?.effort) };
 }
 
 /** The file's new text after changing one space's settings. */

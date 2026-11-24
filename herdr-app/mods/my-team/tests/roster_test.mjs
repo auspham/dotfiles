@@ -84,13 +84,16 @@ assert.equal(childSummary(kids(["working", "pending"], ["working", "pending"], [
 assert.equal(childSummary(kids(["idle", "approved"])), "1 child, nothing waiting");
 assert.equal(childSummary(kids(["idle", "changes"])), "1 child, nothing waiting", "a child sent back is not waiting for review");
 
-assert.deepEqual(settingsFor(parseSettings(""), "spA"), { enabled: false, model: "" }, "an empty or broken file means off");
-assert.deepEqual(settingsFor(parseSettings("{ nope"), "spA"), { enabled: false, model: "" });
+assert.deepEqual(settingsFor(parseSettings(""), "spA"), { enabled: false, model: "", effort: "" }, "an empty or broken file means off");
+assert.deepEqual(settingsFor(parseSettings("{ nope"), "spA"), { enabled: false, model: "", effort: "" });
 const saved = withSetting({}, "spA", { enabled: true });
-assert.deepEqual(settingsFor(parseSettings(saved), "spA"), { enabled: true, model: "" }, "switching a space on is remembered");
+assert.deepEqual(settingsFor(parseSettings(saved), "spA"), { enabled: true, model: "", effort: "" }, "switching a space on is remembered");
 assert.equal(settingsFor(parseSettings(saved), "spB").enabled, false, "other spaces stay off");
 const picked = withSetting(parseSettings(saved), "spA", { model: "haiku" });
-assert.deepEqual(settingsFor(parseSettings(picked), "spA"), { enabled: true, model: "haiku" }, "a model choice keeps the switch");
+assert.deepEqual(settingsFor(parseSettings(picked), "spA"), { enabled: true, model: "haiku", effort: "" }, "a model choice keeps the switch");
+const effortful = withSetting(parseSettings(picked), "spA", { effort: "high" });
+assert.deepEqual(settingsFor(parseSettings(effortful), "spA"), { enabled: true, model: "haiku", effort: "high" }, "effort is kept beside the model");
+assert.equal(settingsFor({ spA: { effort: "turbo" } }, "spA").effort, "", "an unknown effort is ignored");
 assert.equal(settingsFor({ spA: { enabled: true, model: "gpt" } }, "spA").model, "", "an unknown model is ignored");
 assert.ok(MODELS.every((m) => typeof m.label === "string"));
 assert.equal(pickCoordinator([{ address: "t1" }, { address: "t2" }], "t2").address, "t2", "the focused agent leads");

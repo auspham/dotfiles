@@ -96,13 +96,16 @@ run kill clean-one --worktree >/dev/null
 [ ! -d "$repo/.agent-worktrees/clean-one" ] || fail "a clean worktree is removed without force"
 
 # Without --model, the child runs on the model picked in the Team panel for the coordinator's space.
-printf '{"spaces":{"spZ":{"enabled":true,"model":"sonnet"}}}' > "$root/settings.json"
+printf '{"spaces":{"spZ":{"enabled":true,"model":"sonnet","effort":"high"}}}' > "$root/settings.json"
 printf '{"address":"t1","labels":{"herdr.space":"spZ"}}' > "$fx/t1.json"
 : > "$root/calls.log"
 HERDR_TEAM_SETTINGS="$root/settings.json" run spawn pick-model "Task" >/dev/null
-calls | grep -q '"--model","sonnet"' || fail "the panel's model is the default for a child"
+calls | grep -q '"--model","sonnet","--effort","high"' || fail "the panel's model and effort are the default for a child"
 : > "$root/calls.log"
 HERDR_TEAM_SETTINGS="$root/settings.json" run spawn explicit "Task" --model opus >/dev/null
-calls | grep -q '"--model","opus"' || fail "an explicit model wins"
+calls | grep -q '"--model","opus","--effort","high"' || fail "an explicit model wins, and the effort still follows the panel"
+: > "$root/calls.log"
+HERDR_TEAM_SETTINGS="$root/settings.json" run spawn lowest "Task" --effort low >/dev/null
+calls | grep -q '"--effort","low"' || fail "an explicit effort wins"
 
 echo "hcoord: all checks passed"

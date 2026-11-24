@@ -20,7 +20,7 @@ const FIND_TRANSCRIPT = 'ls "$HOME"/.claude/projects/*/"$1".jsonl 2>/dev/null | 
 export default class Team extends View {
   init(_props, cx) {
     this.sessions = new Map(); this.tails = new Map(); this.paths = new Map();
-    this.cards = []; this.loading = false; this.spaces = {};
+    this.cards = []; this.loading = false; this.spaces = {}; this.menu = null;
     if (checking()) return;
     this.refresh(cx);
     cx.timer.every(REFRESH_MS, (cx) => this.refresh(cx));
@@ -52,7 +52,9 @@ export default class Team extends View {
     this.spaces = await readSettings();
   }
 
+  // Re-reads first so an edit made elsewhere since the last refresh is not overwritten.
   async save(spaceId, patch, cx) {
+    this.spaces = await readSettings();
     const text = withSetting(this.spaces, spaceId, patch);
     this.spaces = JSON.parse(text).spaces;
     cx.notify();
@@ -136,9 +138,11 @@ export default class Team extends View {
     const heading = `${spaceName(all, spaceId) || "This space"} · ${this.cards.length} agent${this.cards.length === 1 ? "" : "s"}${summary ? " · " + summary : ""}`;
     return v_flex().size_full().text_size(12)
       .child(div().flex_none().h(36).px(12).flex().items_center().border_b(1).border_color(t.border).font_semibold().text_color(t.foreground).child(heading))
-      .child(coordinatorControls(t, settingsFor(this.spaces, spaceId), {
+      .child(coordinatorControls(t, settingsFor(this.spaces, spaceId), this.menu, {
         onToggle: (_e, cx) => this.setCoordinatorMode(spaceId, !settingsFor(this.spaces, spaceId).enabled, cx),
         onModel: (model, cx) => this.save(spaceId, { model }, cx),
+        onEffort: (effort, cx) => this.save(spaceId, { effort }, cx),
+        onOpen: (menu, cx) => { this.menu = menu; cx.notify(); },
       }))
       .child(v_flex().id("team-list").flex_1().min_h(0).overflow_y_scroll().p(8).gap(7)
         .children(this.cards.map((c) => this.card(t, c)))

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # hcoord: how a coordinator agent launches, watches and stops its child agents in herdr.
 # Each child gets its own tab and its own git worktree, so parallel work never clashes.
-#   hcoord spawn <name> "<task>" [--model M] [--repo DIR] [--base BRANCH]   (model: the Team panel's choice unless given)
+#   hcoord spawn <name> "<task>" [--model M] [--effort E] [--repo DIR] [--base BRANCH]   (model and effort: the Team panel's choice unless given)
 #   hcoord ls [--json]          hcoord diff <name> [--stat]
 #   hcoord review <name> approved|changes|pending [note]
 #   hcoord kill <name> [--worktree] [--force]
@@ -15,11 +15,11 @@ me="${HC_TERMINAL_ID:-}"
 children() { hc ls --json --label role=child --label "coord=$me" | jq -r '.terminals[].address'; }
 label_of() { hc get "$1" --json | jq -r --arg k "$2" '.labels[$k] // empty'; }
 
-# The model the user picked in the Team panel for this space, empty for Claude's own default.
-default_model() {
+# What the user picked in the Team panel for this space (model or effort), empty for Claude's own default.
+picked() {
   local space file="${HERDR_TEAM_SETTINGS:-$HOME/.config/herdr-team/coordinator.json}"
   space=$(hc get "$me" --json 2>/dev/null | jq -r '.labels["herdr.space"] // empty' 2>/dev/null || true)
-  jq -r --arg s "$space" '.spaces[$s].model // empty' "$file" 2>/dev/null || true
+  jq -r --arg s "$space" --arg k "$1" '.spaces[$s][$k] // empty' "$file" 2>/dev/null || true
 }
 
 # The terminal of the child with this task name.
@@ -32,15 +32,16 @@ child_of() {
 }
 
 cmd_spawn() {
-  local name="${1:-}" task="${2:-}" model="" repo="$PWD" base=""
+  local name="${1:-}" task="${2:-}" model="" effort="" repo="$PWD" base=""
   [[ $name =~ ^[a-z0-9][a-z0-9-]{0,30}$ ]] || die "the name must be lowercase letters, digits and hyphens"
   [ -n "$task" ] || die "give the child a task"
   shift 2
   while [ $# -gt 0 ]; do
-    case "$1" in --model) model="$2" ;; --repo) repo="$2" ;; --base) base="$2" ;; *) die "unknown option $1" ;; esac
+    case "$1" in --model) model="$2" ;; --effort) effort="$2" ;; --repo) repo="$2" ;; --base) base="$2" ;; *) die "unknown option $1" ;; esac
     shift 2
   done
-  [ -n "$model" ] || model=$(default_model)
+  [ -n "$model" ] || model=$(picked model)
+  [ -n "$effort" ] || effort=$(picked effort)
   local root; root=$(git -C "$repo" rev-parse --show-toplevel 2>/dev/null) || die "$repo is not in a git repository"
   base="${base:-$(git -C "$root" symbolic-ref --short HEAD 2>/dev/null || git -C "$root" rev-parse --short HEAD)}"
   if (child_of "$name") >/dev/null 2>&1; then die "a child named $name already exists"; fi
@@ -51,7 +52,7 @@ cmd_spawn() {
   git -C "$root" worktree add -q -b "agent/$name" "$worktree" "$base"
 
   local argv message launched terminal
-  argv=$(jq -cn --arg me "$me" --arg model "$model" '["env", "HERDR_ROLE=child", "HERDR_COORD=\($me)", "claude"] + (if $model == "" then [] else ["--model", $model] end)')
+  argv=$(jq -cn --arg me "$me" --arg model "$model" --arg effort "$effort" '["env", "HERDR_ROLE=child", "HERDR_COORD=\($me)", "claude"] + (if $model == "" then [] else ["--model", $model] end) + (if $effort == "" then [] else ["--effort", $effort] end)')
   message="$task"$'\n\n'"You work in your own git worktree on branch agent/$name, started from $base. Stay inside this folder. Commit your work on that branch when it is done (signed off, Conventional Commits). When you finish or get stuck, tell your coordinator with SendMessage."
   # Without --space the tab opens in whichever space is focused, which is not necessarily the coordinator's.
   local space; space=$(label_of "$me" herdr.space)
