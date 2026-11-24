@@ -186,3 +186,27 @@ if [[ -o interactive && -n $HC_TERMINAL_ID ]]; then
   zle -N _herdr_resume_claude
   add-zle-hook-widget line-init _herdr_resume_claude
 fi
+
+# herdr-claude-name:begin
+# In a herdr terminal, name the Claude session after its space and tab (for example excalidraw-2), so
+# ListAgents, SendMessage and the Team panel agree with herdr. A split pane in the same tab has the
+# same label, so a second agent there also gets its terminal address (excalidraw-2-t26).
+claude() {
+  case ${1-} in
+    agents|attach|auth|auto-mode|doctor|gateway|import|install|logs|mcp|plugin|plugins|purge|respawn|rm|setup-token|stop|kill|ultrareview|update|upgrade)
+      command claude "$@"; return ;;
+  esac
+  local -a named
+  if [[ -n ${HC_TERMINAL_ID:-} && " $* " != *" --name "* && " $* " != *" -n "* ]] && (( $+commands[hc] && $+commands[jq] )); then
+    local where others name
+    where=$(hc get "$HC_TERMINAL_ID" --json 2>/dev/null | jq -r '.labels.where // empty')
+    if [[ -n $where ]]; then
+      others=$(hc ls --json 2>/dev/null | jq --arg w "$where" --arg me "$HC_TERMINAL_ID" '[.terminals[]? | select(.agent == "claude-code" and .where == $w and .address != $me)] | length')
+      name=${${where// \/ /-}// /-}
+      (( ${others:-0} > 0 )) && name+="-$HC_TERMINAL_ID"
+      named=(--name "$name")
+    fi
+  fi
+  command claude "${named[@]}" "$@"
+}
+# herdr-claude-name:end
