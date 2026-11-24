@@ -11,12 +11,36 @@ import time
 from collections import Counter
 from collections.abc import Callable
 from pathlib import Path
-from typing import Final
+from typing import Final, NamedTuple, Protocol
 
-VIRTUAL_IFACE_PREFIXES: Final[tuple[str, ...]] = ("lo", "veth", "docker", "br-", "virbr", "tun", "tap")
+LINUX_VIRTUAL_IFACE_PREFIXES: Final[tuple[str, ...]] = ("lo", "veth", "docker", "br-", "virbr", "tun", "tap")
+MACOS_VIRTUAL_IFACE_PREFIXES: Final[tuple[str, ...]] = (
+    "lo", "utun", "gif", "stf", "awdl", "llw", "bridge", "ap", "anpi", "vmenet", "vmnet",
+)
+MACOS_USED_PAGE_KINDS: Final[tuple[str, ...]] = ("Pages active", "Pages wired down", "Pages occupied by compressor")
 STATE_DIR: Final[Path] = Path(os.environ.get("XDG_RUNTIME_DIR", "/tmp")) / "herdr-sysbar"
 UNITS: Final[tuple[str, ...]] = ("B", "K", "M", "G", "T")
 AGENT_STATES: Final[tuple[str, ...]] = ("working", "blocked", "done", "idle")
+
+
+class Memory(NamedTuple):
+    used: int
+    total: int
+
+
+class NetCounters(NamedTuple):
+    rx: int
+    tx: int
+
+
+class Platform(Protocol):
+    def cpu_percent(self) -> float | None:
+        """Returns None until there is enough history to compute a rate."""
+        ...
+
+    def memory(self) -> Memory: ...
+
+    def net_counters(self) -> NetCounters: ...
 
 
 def human(n: float) -> str:
@@ -39,42 +63,91 @@ def swap_sample(name: str, current: list[float]) -> list[float] | None:
     return previous
 
 
+def command_output(*argv: str) -> str:
+    return subprocess.run(argv, capture_output=True, text=True, timeout=5, check=True).stdout
+
+
+class Linux:
+    def cpu_percent(self) -> float | None:
+        fields = [float(x) for x in Path("/proc/stat").read_text().split("\n", 1)[0].split()[1:]]
+        idle = fields[3] + fields[4]
+        previous = swap_sample("cpu", [sum(fields), idle])
+        if previous is None:
+            return None
+        total_delta = sum(fields) - previous[0]
+        idle_delta = idle - previous[1]
+        return 0.0 if total_delta <= 0 else 100 * (1 - idle_delta / total_delta)
+
+    def memory(self) -> Memory:
+        info: dict[str, int] = {}
+        for line in Path("/proc/meminfo").read_text().splitlines():
+            key, value = line.split(":", 1)
+            info[key] = int(value.split()[0]) * 1024
+        return Memory(used=info["MemTotal"] - info["MemAvailable"], total=info["MemTotal"])
+
+    def net_counters(self) -> NetCounters:
+        rx = tx = 0
+        for line in Path("/proc/net/dev").read_text().splitlines()[2:]:
+            iface, data = line.split(":", 1)
+            if iface.strip().startswith(LINUX_VIRTUAL_IFACE_PREFIXES):
+                continue
+            cols = data.split()
+            rx += int(cols[0])
+            tx += int(cols[8])
+        return NetCounters(rx, tx)
+
+
+class MacOS:
+    def cpu_percent(self) -> float | None:
+        # macOS exposes no cumulative CPU counters to the shell, so sum what ps reports per process.
+        per_process = sum(float(x) for x in command_output("ps", "-A", "-o", "%cpu=").split())
+        return min(100.0, per_process / int(command_output("sysctl", "-n", "hw.logicalcpu")))
+
+    def memory(self) -> Memory:
+        lines = command_output("vm_stat").splitlines()
+        page_size = int(lines[0].split("page size of ")[1].split()[0])
+        pages: dict[str, int] = {}
+        for line in lines[1:]:
+            key, _, value = line.partition(":")
+            if value.strip().rstrip(".").isdigit():
+                pages[key.strip()] = int(value.strip().rstrip("."))
+        used = sum(pages[kind] for kind in MACOS_USED_PAGE_KINDS) * page_size
+        return Memory(used=used, total=int(command_output("sysctl", "-n", "hw.memsize")))
+
+    def net_counters(self) -> NetCounters:
+        rx = tx = 0
+        for line in command_output("netstat", "-ibn").splitlines()[1:]:
+            cols = line.split()
+            # One <Link#N> row per interface. The address column can be empty, so index from the end.
+            if len(cols) < 10 or not cols[2].startswith("<Link#") or cols[0].startswith(MACOS_VIRTUAL_IFACE_PREFIXES):
+                continue
+            rx += int(cols[-5])
+            tx += int(cols[-2])
+        return NetCounters(rx, tx)
+
+
+PLATFORM: Final[Platform] = MacOS() if sys.platform == "darwin" else Linux()
+
+
 def cpu() -> str:
-    fields = [float(x) for x in Path("/proc/stat").read_text().split("\n", 1)[0].split()[1:]]
-    idle = fields[3] + fields[4]
-    previous = swap_sample("cpu", [sum(fields), idle])
-    if previous is None:
-        return "CPU --"
-    total_delta = sum(fields) - previous[0]
-    idle_delta = idle - previous[1]
-    pct = 0.0 if total_delta <= 0 else 100 * (1 - idle_delta / total_delta)
-    return f"CPU {pct:.0f}%"
+    pct = PLATFORM.cpu_percent()
+    return "CPU --" if pct is None else f"CPU {pct:.0f}%"
 
 
 def mem() -> str:
-    info: dict[str, int] = {}
-    for line in Path("/proc/meminfo").read_text().splitlines():
-        key, value = line.split(":", 1)
-        info[key] = int(value.split()[0]) * 1024
-    used = info["MemTotal"] - info["MemAvailable"]
-    return f"RAM {human(used)}/{human(info['MemTotal'])}"
+    memory = PLATFORM.memory()
+    return f"RAM {human(memory.used)}/{human(memory.total)}"
 
 
 def net() -> str:
-    rx = tx = 0
-    for line in Path("/proc/net/dev").read_text().splitlines()[2:]:
-        iface, data = line.split(":", 1)
-        if iface.strip().startswith(VIRTUAL_IFACE_PREFIXES):
-            continue
-        cols = data.split()
-        rx += int(cols[0])
-        tx += int(cols[8])
-    now = time.monotonic()
-    previous = swap_sample("net", [now, rx, tx])
+    counters = PLATFORM.net_counters()
+    # Wall clock: samples are compared across processes, and macOS restarts time.monotonic() in each one.
+    now = time.time()
+    previous = swap_sample("net", [now, counters.rx, counters.tx])
     if previous is None or now <= previous[0]:
         return "↓-- ↑--"
     elapsed = now - previous[0]
-    return f"↓{human((rx - previous[1]) / elapsed)}/s ↑{human((tx - previous[2]) / elapsed)}/s"
+    return f"↓{human((counters.rx - previous[1]) / elapsed)}/s ↑{human((counters.tx - previous[2]) / elapsed)}/s"
 
 
 def agents() -> str:
