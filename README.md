@@ -10,6 +10,7 @@ Download JetbrainsMono Nerd Font
 ## Agent hooks (Copilot CLI + Claude Code + OpenCode)
 `mkdir -p ~/.config/agent-hooks && cp agent-hooks/*.sh ~/.config/agent-hooks/ && chmod +x ~/.config/agent-hooks/*.sh`
 Run `bash agent-hooks/tests/hooks_test.sh` to check the lifecycle after changing them.
+Needs `tmux` and `jq`. On macOS also `brew install flock` for per-window locking (without it the hooks still run, just unserialised). The hooks run on the stock bash 3.2, detach the spinner with perl's `POSIX::setsid` when there is no `setsid` binary, and play `/System/Library/Sounds` through `afplay` when `canberra-gtk-play` is missing.
 
 ## Copilot CLI
 `cp copilot/settings.json copilot/copilot-instructions.md ~/.copilot/` (install the agent hooks above first)

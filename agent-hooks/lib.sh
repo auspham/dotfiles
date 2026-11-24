@@ -8,12 +8,21 @@
 hook_agent="${HOOK_AGENT:-copilot}"
 
 copilot_db="$HOME/.copilot/session-store.db"
-sound_dir="/usr/share/sounds/freedesktop/stereo"
 
-# Sounds (freedesktop .oga names under $sound_dir). OpenCode's built-in
-# opencode.notifications plugin already plays its own, so its hooks stay silent.
-hook_sound_input="bell.oga"
-hook_sound_done="complete.oga"
+# Sounds: freedesktop .oga names played with canberra-gtk-play on Linux, otherwise the
+# macOS system sounds played with afplay. OpenCode's built-in opencode.notifications
+# plugin already plays its own, so its hooks stay silent.
+if command -v canberra-gtk-play >/dev/null 2>&1; then
+  hook_sound_player="canberra-gtk-play -f"
+  sound_dir="/usr/share/sounds/freedesktop/stereo"
+  hook_sound_input="bell.oga"
+  hook_sound_done="complete.oga"
+else
+  hook_sound_player="afplay"
+  sound_dir="/System/Library/Sounds"
+  hook_sound_input="Ping.aiff"
+  hook_sound_done="Glass.aiff"
+fi
 case "$hook_agent" in
   opencode) hook_sound_enabled=0 ;;
   *) hook_sound_enabled=1 ;;
@@ -121,8 +130,10 @@ hook_window_id() {
   [ -n "$pane" ] && tmux display-message -p -t "$pane" '#{window_id}' 2>/dev/null
 }
 
+# ANSI-C quoting turns the \x escapes into raw bytes before sed sees them, since BSD sed
+# (macOS) does not understand \x itself.
 hook_strip_marker() {
-  printf '%s' "$1" | LC_ALL=C sed -E 's/^(\xE2\x9C[\x93\x97]|\xE2\x9D\x93|\(\?\)|\xE2[\xA0-\xA3][\x80-\xBF]) //'
+  printf '%s' "$1" | LC_ALL=C sed -E $'s/^(\xE2\x9C[\x93\x97]|\xE2\x9D\x93|\\(\\?\\)|\xE2[\xA0-\xA3][\x80-\xBF]) //'
 }
 
 # Authoritative session title as shown in Copilot (what /rename writes).
@@ -169,7 +180,17 @@ hook_session_name() {
 
 hook_play() {
   [ "$hook_sound_enabled" = 1 ] || return 0
-  canberra-gtk-play -f "$sound_dir/$1" >/dev/null 2>&1 || printf '\a'
+  $hook_sound_player "$sound_dir/$1" >/dev/null 2>&1 || printf '\a'
+}
+
+# Run a command in a new session so it outlives the hook. macOS has no setsid binary,
+# so fall back to perl's POSIX::setsid there.
+hook_detach() {
+  if command -v setsid >/dev/null 2>&1; then
+    setsid "$@"
+  else
+    perl -MPOSIX -e 'POSIX::setsid(); exec @ARGV or die "exec $ARGV[0]: $!\n"' -- "$@"
+  fi
 }
 
 # Current state token for this window ("working"|"finishing"|"input"|"done"|"idle"|"").
@@ -320,7 +341,7 @@ hook_start_spinner() {
   hook_state_write "$win" "$state" "$gen"
   tmux set-window-option -t "$win" automatic-rename off 2>/dev/null
   hook_set_style "$win" "$hook_style_working"
-  setsid bash "$HOME/.config/agent-hooks/spin.sh" "$win" "${name:-$hook_agent}" "$gen" "$pane" "$(hook_field transcript_path)" 8>&- >/dev/null 2>&1 &
+  hook_detach bash "$HOME/.config/agent-hooks/spin.sh" "$win" "${name:-$hook_agent}" "$gen" "$pane" "$(hook_field transcript_path)" 8>&- >/dev/null 2>&1 &
 }
 
 hook_start_working() {

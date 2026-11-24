@@ -26,7 +26,13 @@ need_idle="${hook_cancel_idle_hits:-2}"       # consecutive idle probes to confi
 title_every="${hook_title_check_frames:-40}"  # ~5s between title refreshes
 
 read -ra frames <<< "$hook_spinner_frames"; n=${#frames[@]}
-exec 9<> <(:) 2>/dev/null            # never-ready fd: sub-second wait without spawning sleep
+# Bash 4+ waits on a never-ready fd for a sub-second pause without spawning sleep. The
+# macOS system bash (3.2) only accepts whole-second read timeouts, so it uses sleep.
+if [ "${BASH_VERSINFO[0]}" -ge 4 ] && exec 9<> <(:) 2>/dev/null; then
+  frame_wait() { read -t "$hook_spinner_delay" -u 9 _ 2>/dev/null || true; }
+else
+  frame_wait() { sleep "$hook_spinner_delay"; }
+fi
 i=0
 max="${hook_spinner_max_frames:-720000}"  # ~24h at the default frame delay
 idle_hits=0
@@ -75,7 +81,7 @@ while [ "$i" -lt "$max" ]; do
   fi
 
   i=$(( i + 1 ))
-  read -t "$hook_spinner_delay" -u 9 _ 2>/dev/null || true
+  frame_wait
 done
 
 if [ "$i" -ge "$max" ] && hook_lock_window_id "$win"; then

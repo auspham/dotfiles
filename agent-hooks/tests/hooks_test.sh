@@ -74,7 +74,7 @@ agent_count() {
     printf '0'
     return
   }
-  find "$dir" -maxdepth 1 -type f | wc -l
+  find "$dir" -maxdepth 1 -type f | wc -l | tr -d ' '
 }
 
 sound_count() {
