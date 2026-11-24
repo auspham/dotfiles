@@ -73,7 +73,7 @@ cmd_ls() {
     rows+=("$(jq -c --arg stat "$(shortstat "$(jq -r '.labels.worktree' <<<"$info")" "$(jq -r '.labels.base' <<<"$info")")" \
       '{name: .labels.task, terminal: .address, status: (.status.state // "unknown"), review: (.labels.review // "pending"), branch: .labels.branch, diff: $stat}' <<<"$info")")
   done
-  local all; all=$(printf '%s\n' "${rows[@]}" | jq -s 'map(select(. != null))')
+  local all; all=$(printf '%s\n' ${rows[@]+"${rows[@]}"} | jq -s 'map(select(. != null))')
   if [ "${1:-}" = --json ]; then echo "$all"; return; fi
   jq -r '.[] | "\(.name)\t\(.terminal)\t\(.status)\t\(.review)\t\(.diff)"' <<<"$all" | column -t -s $'\t'
 }
@@ -106,7 +106,7 @@ cmd_kill() {
   if $remove; then
     local root opts=(); root="$(dirname "$(dirname "$worktree")")"
     ! $force || opts+=(--force)
-    git -C "$root" worktree remove "${opts[@]}" "$worktree"
+    git -C "$root" worktree remove ${opts[@]+"${opts[@]}"} "$worktree"
     echo "removed the worktree; branch agent/$name is kept"
   fi
 }

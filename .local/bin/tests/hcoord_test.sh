@@ -2,7 +2,7 @@
 set -euo pipefail
 
 hcoord="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/hcoord"
-root="$(mktemp -d)"
+root="$(cd "$(mktemp -d)" && pwd -P)"
 trap 'rm -rf "$root"' EXIT
 bin="$root/bin" fx="$root/fx" repo="$root/repo"
 mkdir -p "$bin" "$fx"
