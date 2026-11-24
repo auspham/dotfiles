@@ -3,7 +3,7 @@
 import { div } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
 import { readTextFile, terminals, focused, exec } from "herdr";
-import { guidePath, parseGuide, headMoved, guideEntry, guideStats, canFinish } from "./guide.js";
+import { guidePath, parseGuide, headMoved, guideEntry, guideStats, canFinish, notifyTarget } from "./guide.js";
 
 /** The guide in force for the Changes root, re-read when its file changes. */
 export class GuideSource {
@@ -29,12 +29,16 @@ export class GuideSource {
     return guideBanner(t, this.guide, branch ? guideStats(items) : null, { label: `Show since ${host.base?.name ?? "base"}`, run: (_e, cx) => host.setRange("branch", cx) }, { note: this.note, run: (_e, cx) => this.finish(host, cx) });
   }
 
-  /** Tells the coordinator the focused child is reviewed, then reloads. @param {any} host the Changes view @param {any} cx */
+  /** Marks the focused child reviewed, reloads, then tells its coordinator without blocking. @param {any} host the Changes view @param {any} cx */
   finish(host, cx) {
+    const target = notifyTarget(terminals().find((x) => x.address === this.address)?.labels);
     cx.spawn(async (cx) => {
       const done = await exec("hc", ["label", this.address, "review=reviewed", "review_note=Reviewed by you"]).catch(() => null);
       this.note = done?.code === 0 ? "" : "Could not mark it reviewed";
-      if (done?.code === 0) host.refresh(cx); else cx.notify();
+      if (done?.code !== 0) { cx.notify(); return; }
+      host.refresh(cx);
+      const sent = target ? await exec("hc", ["send", target.coord, target.text]).catch(() => null) : null;
+      if (sent?.code !== 0) { this.note = "Marked reviewed; could not tell the coordinator"; cx.notify(); }
     });
   }
 

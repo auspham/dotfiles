@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { validateGuide, parseGuide, guideEntry, guideStats, canFinish, headMoved, guidePath, CHANGED, NOT_IN_GUIDE } from "../guide.js";
+import { validateGuide, parseGuide, guideEntry, guideStats, canFinish, headMoved, guidePath, notifyTarget, CHANGED, NOT_IN_GUIDE } from "../guide.js";
 import { levelOf } from "../triage.js";
 
 const HEAD = "a".repeat(40);
@@ -46,5 +46,12 @@ assert.equal(canFinish({ needYou: 2, done: 1 }), false, "Done reviewing is enabl
 assert.equal(canFinish({ needYou: 2, done: 2 }), true);
 assert.equal(canFinish({ needYou: 0, done: 0 }), true, "with nothing to look closely at, Done reviewing is enabled");
 assert.equal(guidePath({ review: "reviewed", guide: "/g.json" }), null, "a reviewed child shows no banner");
+
+const labels = { coord: "t2b", task: "login" };
+assert.deepEqual(notifyTarget(labels), { coord: "t2b", text: "[Changes tab] The user finished reviewing login (clicked Done reviewing). Ask them before merging or closing it." }, "the coordinator is told when the user finishes a review");
+assert.equal(notifyTarget({ task: "login" }), null, "no coordinator label means no message");
+assert.equal(notifyTarget({ coord: "t2b" }), null, "no task label means no message");
+assert.equal(notifyTarget(undefined), null);
+for (const coord of ["--force", "t2b --force", "", "../x", "t2b\nx"]) assert.equal(notifyTarget({ coord, task: "login" }), null, "a malformed coordinator address is not used");
 
 console.log("my-changes guide: all checks passed");

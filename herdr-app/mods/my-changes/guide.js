@@ -72,3 +72,12 @@ export function guideStats(items) {
 
 /** Whether the user may tell the coordinator the review is done: every Look closely file is ticked. @param {{ needYou: number, done: number }} stats @returns {boolean} */
 export const canFinish = (stats) => stats.done === stats.needYou;
+
+const TERMINAL_ADDRESS = /^t[0-9a-z]{1,8}$/;
+
+/** Who to tell, and what, when the user finishes reviewing; null without a usable coord and task label. @param {Record<string, string> | undefined} labels @returns {{ coord: string, text: string } | null} */
+export function notifyTarget(labels) {
+  const coord = labels?.coord, task = text(labels?.task, 80);
+  if (typeof coord !== "string" || !TERMINAL_ADDRESS.test(coord) || !task) return null;
+  return { coord, text: `[Changes tab] The user finished reviewing ${task} (clicked Done reviewing). Ask them before merging or closing it.` };
+}

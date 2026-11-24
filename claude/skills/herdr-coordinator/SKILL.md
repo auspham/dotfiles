@@ -40,6 +40,8 @@ Flow: reviewing, approved, then handoff, then your user reads, then merge. Once 
 
 Then tell your user it is their turn and which files to read first. Wait until your user says they are done. Only then ask to merge and kill. Never merge or kill a child whose review is `yours`.
 
+A message starting `[Changes tab] The user finished reviewing <name>` is your user's Done reviewing click: treat it as their go-ahead to ask about merging, not as permission to merge.
+
 ## Reporting to your user
 
 Per child (after a handoff, name the `high` files first), in a few lines: what changed, the files to read first, where the risk is, and your recommendation (accept or changes needed). Say plainly when work is over-built. Do not paste diffs unless asked.
