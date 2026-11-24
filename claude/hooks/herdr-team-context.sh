@@ -71,12 +71,12 @@ if [ -n "$roster" ] || [ "$role" = coordinator ] || [ "$role" = child ]; then
   context="You are one of several Claude agents sharing the herdr space \"$space_name\". You are $own_name (terminal $HC_TERMINAL_ID)."
   [ -z "$roster" ] || context+=$'\n'"Peers right now (status as of when this was written; ListAgents shows it live):"$'\n'"$roster"
   case "$role" in
-    child) context+=$'\n'"$(child_protocol "$coord_name" "$coord_terminal")" ;;
+    child) context+=$'\n'"$(child_protocol "$coord_name" "$coord_terminal")"$'\n'"$(notes_pointer "$spaces_dir/$space/notes.md")" ;;
     coordinator)
       prefs=""; [ ! -f "$preferences" ] || prefs=$(head -c 3000 "$preferences")
       context+=$'\n'"$(coordinator_charter "$prefs")"
       context+=$'\n'"$(coordinator_record "$spaces_dir" "$space" "$space_name")" ;;
-    *) context+=$'\n'"$(peer_protocol)" ;;
+    *) context+=$'\n'"$(peer_protocol)"$'\n'"$(notes_pointer "$spaces_dir/$space/notes.md")" ;;
   esac
 fi
 

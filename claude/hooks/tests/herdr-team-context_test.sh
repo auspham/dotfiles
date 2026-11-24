@@ -160,6 +160,18 @@ terminal t1 spA s1 "me" /w/app; terminal t2 spA s2 "fixing the login bug" /w/api
 write_session s1 me-agent busy 100; write_session s2 api-agent idle 200; printf '{"sessionId":"s9","na' > "$sessions/900.json"
 run SessionStart s1 | context | grep -q 'api-agent' || fail "one damaged session file does not hide the other agents"
 
+# Other agents in the space are pointed at the coordinator's notes.
+reset
+terminal t1 spA s1 "me" /w/app; terminal t2 spA s2 "fixing the login bug" /w/api coordinator
+write_session s1 me-agent busy 100; write_session s2 api-agent idle 200
+run SessionStart s1 | context | grep -q 'notes on the goal' && fail "no pointer when the space has no notes"
+mkdir -p "$root/coord/spaces/spA"; printf 'Goal: ship the thing' > "$root/coord/spaces/spA/notes.md"
+out=$(run SessionStart s1 | context)
+grep -q "at $root/coord/spaces/spA/notes.md" <<<"$out" || fail "a peer is pointed at the space's notes"
+grep -q 'Goal: ship the thing' <<<"$out" && fail "a peer is not given the notes themselves"
+out=$(HERDR_ROLE=child HERDR_COORD=t2 run SessionStart s1 | context)
+grep -q "at $root/coord/spaces/spA/notes.md" <<<"$out" || fail "a child is pointed at the space's notes"
+
 # Opting out leaves the agent a plain peer.
 reset; enable spA
 terminal t1 spA s1 "me" /w/app; write_session s1 me-agent busy 100
