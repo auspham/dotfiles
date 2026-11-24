@@ -2,18 +2,25 @@
 // Why: the built-in alerts cannot skip one agent, and a coordinator's children should not ding when they finish.
 
 import { View, div } from "gpui-kit";
-import { agents, checking, notify, playSound, terminals } from "herdr";
-import { alertFor } from "./alerts.js";
+import { agents, appHome, checking, notify, playSound, readTextFile, terminals } from "herdr";
+import { alertFor, isQuiet, parseArchived } from "./alerts.js";
 
 const POLL_MS = 500;
+const ARCHIVE_MS = 3000;
 
 export default class MySound extends View {
   /** @type {Map<string, string>} */
   last = new Map();
 
+  /** @type {Set<string>} */
+  archived = new Set();
+
   init(_props, cx) {
     if (checking()) return;
     cx.timer.every(POLL_MS, () => this.poll());
+    const load = () => readTextFile(`${appHome()}/archived-spaces.json`).catch(() => null).then((text) => { this.archived = parseArchived(text); });
+    load();
+    cx.timer.every(ARCHIVE_MS, load);
   }
 
   poll() {
@@ -23,7 +30,7 @@ export default class MySound extends View {
       seen.add(agent.address);
       const alert = alertFor(this.last.get(agent.address), agent.status, roles.get(agent.address));
       this.last.set(agent.address, agent.status);
-      if (alert) this.announce(agent, alert);
+      if (alert && !isQuiet(agent.space, this.archived)) this.announce(agent, alert);
     }
     for (const address of this.last.keys()) if (!seen.has(address)) this.last.delete(address);
   }

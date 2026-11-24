@@ -12,3 +12,25 @@ export function alertFor(before, now, role) {
   if (before === "working" && FINISHED.has(now) && role !== "child") return { sound: "done", level: "success", verb: "finished" };
   return null;
 }
+
+/**
+ * The archived space ids in my-spaces' archive file text. A missing or damaged file archives nothing.
+ * @param {string | null | undefined} text
+ * @returns {Set<string>}
+ */
+export function parseArchived(text) {
+  try {
+    const spaces = JSON.parse(text ?? "")?.spaces;
+    return new Set(Array.isArray(spaces) ? spaces.filter((s) => typeof s === "string") : []);
+  } catch {
+    return new Set();
+  }
+}
+
+/**
+ * Whether an agent's alert is dropped: agents in an archived space are quiet for done and for blocked.
+ * @param {string} space the agent's space id
+ * @param {Set<string>} archived
+ * @returns {boolean}
+ */
+export const isQuiet = (space, archived) => archived.has(space);

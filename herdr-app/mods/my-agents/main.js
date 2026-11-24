@@ -2,7 +2,10 @@
 
 import { View, div, image, svg } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
-import { agents, nextCommand, terminals, panes, focused, spaces, run, theme, shared, setShared, setAgentOrder, openOverlay, closeOverlay, props, window, layout } from "herdr";
+import { agents, appHome, readTextFile, nextCommand, terminals, panes, focused, spaces, run, theme, shared, setShared, setAgentOrder, openOverlay, closeOverlay, props, window, layout } from "herdr";
+
+import { ARCHIVE_FILE, parseArchived, splitArchived } from "./archive.js";
+import { archivedSection } from "./archive_view.js";
 
 function find(node, id) {
   if (node?.id === id) return node;
@@ -100,6 +103,11 @@ export default class Agents extends View {
     this.recent = this.recent.filter((e, i, all) => all.findIndex((x) => x.addr === e.addr) === i);
     this.lastStatus = new Map(); this.gone = new Map(); this.bootAt = Date.now();
     cx.timer.every(500, (cx) => this.trackEvents(cx));
+    this.archived = new Set();
+    try { this.archivedOpen = localStorage.getItem("archivedOpen") === "1"; } catch { this.archivedOpen = false; }
+    const load = () => readTextFile(`${appHome()}/${ARCHIVE_FILE}`).catch(() => null).then((text) => { this.archived = parseArchived(text); cx.notify(); });
+    load();
+    cx.timer.every(3000, load);
   }
 
   // Stamps agents whose state changed. Done and idle count as one: looking at a
@@ -285,6 +293,12 @@ export default class Agents extends View {
     return div().size(7).mx(3).flex_none().rounded(4).bg(a.status === "done" ? color : t.dim + "00");
   }
 
+  toggleArchived(cx) {
+    this.archivedOpen = !this.archivedOpen;
+    try { localStorage.setItem("archivedOpen", this.archivedOpen ? "1" : "0"); } catch { /* storage can be unavailable */ }
+    cx.notify();
+  }
+
   holds() { return this.handle.is_focused() && shared("nav.focus") === "agents"; }
 
   render(cx) {
@@ -292,7 +306,8 @@ export default class Agents extends View {
     if (props()?.sortMenu) return this.sortMenu(t);
     const collapsed = narrow();
     const sort = sortOf();
-    let list = agents();
+    const { live, hidden } = splitArchived(agents(), this.archived);
+    let list = live;
     this.order = [];
     this.listed = new Map(list.map((a) => [a.address, a.status]));
     const all = terminals();
@@ -533,8 +548,10 @@ export default class Agents extends View {
       ? list.flatMap(withKids)
       : groups.flatMap((g) => [header(g), ...(asTree ? [summary(g)] : []), ...(this.folded.has(g.id) ? [] : asTree && g.id !== "pinned" ? treeRows(g.members) : g.members.flatMap(withKids))]);
 
-    const byAddress = new Map(agents().map((a) => [a.address, a]));
-    const open = this.recent.filter((e) => e.state === "open"), closed = this.recent.filter((e) => e.state !== "open");
+    const byAddress = new Map(live.map((a) => [a.address, a]));
+    const quiet = new Set(hidden.map((a) => a.address));
+    const recent = this.recent.filter((e) => !quiet.has(e.addr));
+    const open = recent.filter((e) => e.state === "open"), closed = recent.filter((e) => e.state !== "open");
     const events = [...open.slice(0, 6), ...closed.slice(0, Math.max(0, 8 - Math.min(open.length, 6)) ? 3 : 0)].slice(0, 8);
     this.order = [...events.map((e) => `recent:${e.id}`), ...this.order];
     const recentEl = v_flex().flex_none().px(8).pb(6).border_b(1).border_color(t.border)
@@ -611,7 +628,8 @@ export default class Agents extends View {
       .when(list.length === 0 && !collapsed, (el) =>
         el.child(div().px(12).text_size(12).text_color(t.dim).child("No agent status yet. Agents show up here when they report their status. Older versions and agents inside tmux may not.")),
       )
-      .child(v_flex().id("ag-list").flex_1().min_h(0).px(collapsed ? 0 : 8).overflow_y_scrollbar().mode("always").children(rows))
+      .child(v_flex().id("ag-list").flex_1().min_h(0).px(collapsed ? 0 : 8).overflow_y_scrollbar().mode("always").children(rows)
+        .when(hidden.length > 0 && !collapsed, (el) => el.child(archivedSection(t, hidden, this.archivedOpen, (cx) => this.toggleArchived(cx)))))
       .when(collapsed, (el) =>
         el.child(
           h_flex()
