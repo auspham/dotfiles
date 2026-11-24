@@ -31,3 +31,32 @@ You are the coordinator of this herdr space: the first agent started here, appoi
 TEXT
   if [ -n "${1:-}" ]; then printf '\nWhat you know about how your user likes work done:\n%s\n' "$1"; fi
 }
+
+# Where this space keeps its record, and what it says. $1 spaces dir, $2 space id, $3 space name.
+coordinator_record() {
+  local dir="$1/$2" ledger="$1/$2/ledger.jsonl" live other
+  printf 'Your knowledge dir for this space is %s. notes.md there is yours to keep current; ledger.jsonl is written by hcoord.\n' "$dir"
+  if [ -f "$dir/notes.md" ]; then printf 'Your notes so far:\n%s\n' "$(head -c 3000 "$dir/notes.md")"; fi
+  if [ -f "$ledger" ]; then
+    live=$(ledger_live_children "$ledger")
+    [ -z "$live" ] || printf 'The ledger lists children not killed: %s. Run hcoord ls, then hcoord adopt if they are missing.\n' "$live"
+  else
+    for other in "$1"/*/ledger.jsonl; do
+      [ -f "$other" ] || continue
+      if [ "$(ledger_space_name "$other")" = "$3" ]; then
+        printf 'Another space dir has a ledger for a space also named "%s": if it is your predecessor, run hcoord adopt --from %s\n' "$3" "$(basename "$(dirname "$other")")"
+        break
+      fi
+    done
+  fi
+}
+
+# Comma separated names of children whose last spawn, adopt or kill event is not a kill. Damaged lines are skipped.
+ledger_live_children() {
+  jq -Rrn '[inputs | fromjson? | select(type == "object" and .name != null and (.event == "spawn" or .event == "adopt" or .event == "kill"))]
+    | group_by(.name) | map(select(last.event != "kill") | .[0].name) | join(", ")' "$1" 2>/dev/null
+}
+
+ledger_space_name() {
+  jq -Rrn '[inputs | fromjson? | select(type == "object" and .space_name != null)] | first | .space_name // empty' "$1" 2>/dev/null
+}

@@ -38,6 +38,14 @@ Record the verdict with `hcoord review <name> approved|changes "<short note>"`. 
 
 Per child, in a few lines: what changed, the files to read first, where the risk is, and your recommendation (accept or changes needed). Say plainly when work is over-built. Do not paste diffs unless asked.
 
+## Keeping the record
+
+Your knowledge dir is `${COORDINATOR_HOME:-$HOME/.claude/coordinator}/spaces/<space>/` (the session start context names it). Keep `notes.md` there current with these headings: Goal, Plan, Children, Decisions, Open questions, Next step. Rewrite it after each spawn, review or user decision, so a successor can take over from it alone. `ledger.jsonl` beside it is written by hcoord (one line per spawn, review, kill and adopt): read it, never edit it.
+
+## Taking over
+
+When you start in a space that already has a record (a new coordinator, or a recreated space), read `notes.md` and the ledger, run `hcoord ls`, then `hcoord adopt` (or `hcoord adopt --from <space-id>` for the old space's children) to take surviving children and list orphaned worktrees. SendMessage each adopted child that you are its coordinator now. The git branches `agent/<name>` are the ground truth when the notes and ledger disagree.
+
 ## Limits
 
 - Ask your user before killing a child (`hcoord kill <name> [--worktree]`) and before merging anything or touching the main branch. Never merge on your own.

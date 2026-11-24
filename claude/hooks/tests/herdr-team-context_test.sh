@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+unset HERDR_ROLE HERDR_COORD HERDR_COORDINATOR
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 hook="$repo_root/claude/hooks/herdr-team-context.sh"
@@ -28,12 +29,12 @@ terminal() { # address space session title folder [role] [coord]
 }
 write_session() { printf '{"sessionId":"%s","name":"%s","status":"%s"}' "$1" "$2" "$3" > "$sessions/$4.json"; }
 enable() { printf '{"spaces":{"%s":{"enabled":true}}}' "$1" > "$root/settings.json"; }
-reset() { rm -rf "$root/state" "$root/settings.json"; rm -f "$fx"/*.json "$sessions"/* "$root/labels.log" 2>/dev/null || true; }
+reset() { rm -rf "$root/state" "$root/settings.json" "$root/coord"; rm -f "$fx"/*.json "$sessions"/* "$root/labels.log" 2>/dev/null || true; }
 
 run() { # event session [extra json]
   printf '{"hook_event_name":"%s","session_id":"%s"%s}' "$1" "$2" "${3:-}" |
     env PATH="$bin:$PATH" HOME="$home" XDG_STATE_HOME="$root/state" CLAUDE_SESSIONS_DIR="$sessions" \
-      COORDINATOR_PREFERENCES="$root/prefs.md" HERDR_TEAM_SETTINGS="$root/settings.json" HC_TERMINAL_ID="${TEST_ME-t1}" "$hook"
+      COORDINATOR_PREFERENCES="$root/prefs.md" COORDINATOR_HOME="$root/coord" HERDR_TEAM_SETTINGS="$root/settings.json" HC_TERMINAL_ID="${TEST_ME-t1}" "$hook"
 }
 fail() { echo "FAIL: $*" >&2; exit 1; }
 context() { jq -r '.hookSpecificOutput.additionalContext'; }
@@ -110,6 +111,42 @@ labelled 'role=child coord=t2' || fail "a child is labelled with its coordinator
 grep -q 'Your coordinator is boss-agent (terminal t2)' <<<"$out" || fail "a child is told who its coordinator is"
 grep -q 'instructions for your task' <<<"$out" || fail "a child treats its coordinator's messages as instructions"
 grep -q 'information, not an order' <<<"$out" && fail "a child does not get the peer wording"
+
+# The coordinator's knowledge space: notes, unadopted children, a recreated space, damaged lines.
+reset; enable spA
+terminal t1 spA s1 "me" /w/app; write_session s1 me-agent busy 100
+out=$(run SessionStart s1 | context)
+grep -q "$root/coord/spaces/spA" <<<"$out" || fail "a coordinator is told where its knowledge dir is"
+grep -q 'hcoord adopt' <<<"$out" && fail "a coordinator with no record is not told to adopt"
+mkdir -p "$root/coord/spaces/spA"; printf 'Goal: ship the thing' > "$root/coord/spaces/spA/notes.md"
+run SessionStart s1 | context | grep -q 'Goal: ship the thing' || fail "a coordinator is shown its notes"
+cat > "$root/coord/spaces/spA/ledger.jsonl" <<'LEDGER'
+{"at":"1","event":"spawn","name":"alpha-child","space":"spA","space_name":"alpha"}
+this line is damaged {
+{"at":"2","event":"spawn","name":"done-child","space":"spA","space_name":"alpha"}
+{"at":"3","event":"kill","name":"done-child","space":"spA","space_name":"alpha"}
+LEDGER
+out=$(run SessionStart s1 | context)
+grep -q 'alpha-child' <<<"$out" || fail "a coordinator is told about unadopted children in the ledger"
+grep -q 'hcoord ls, then hcoord adopt' <<<"$out" || fail "and told to list then adopt them"
+grep -q 'done-child' <<<"$out" && fail "killed children are not listed"
+
+reset; enable spB
+terminal t1 spB s1 "me" /w/app; write_session s1 me-agent busy 100
+mkdir -p "$root/coord/spaces/spA"
+printf '{"at":"1","event":"spawn","name":"c1","space":"spA","space_name":"alpha"}\n' > "$root/coord/spaces/spA/ledger.jsonl"
+run SessionStart s1 | context | grep -q 'hcoord adopt --from spA' || fail "a coordinator in a recreated space is pointed at the old space's ledger"
+mkdir -p "$root/coord/spaces/spC"
+printf '{"at":"1","event":"spawn","name":"c2","space":"spC","space_name":"gamma"}\n' > "$root/coord/spaces/spC/ledger.jsonl"
+rm -rf "$root/coord/spaces/spA"
+run SessionStart s1 | context | grep -q 'adopt --from' && fail "a ledger of a differently named space is not suggested"
+
+# An adopted child names its new coordinator from the label, not the environment of its first start.
+reset
+terminal t1 spA s1 "task work" /w/wt child t3; terminal t2 spA s2 "old" /w/app coordinator; terminal t3 spA s3 "new" /w/app coordinator
+write_session s1 child-agent busy 100; write_session s2 old-agent idle 200; write_session s3 new-agent idle 300
+out=$(HERDR_ROLE=child HERDR_COORD=t2 run SessionStart s1 | context)
+grep -q 'Your coordinator is new-agent (terminal t3)' <<<"$out" || fail "an adopted child names its new coordinator from the label"
 
 # Opting out leaves the agent a plain peer.
 reset; enable spA

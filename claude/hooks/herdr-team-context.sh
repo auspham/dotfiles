@@ -22,6 +22,7 @@ state_dir="${XDG_STATE_HOME:-$HOME/.local/state}/herdr-team"
 preferences="${COORDINATOR_PREFERENCES:-$HOME/.claude/coordinator/preferences.md}"
 # Written by the Team panel's Coordinator mode switch, per space.
 settings="${HERDR_TEAM_SETTINGS:-$HOME/.config/herdr-team/coordinator.json}"
+spaces_dir="${COORDINATOR_HOME:-$HOME/.claude/coordinator}/spaces"
 
 # Live sessions by id: name and busy/idle. The .key files beside them hold credentials and are never read.
 registry='{}'
@@ -57,7 +58,7 @@ if [ "$event" = SessionStart ] || [ -z "$own_role" ] || [ "$own_role" = coordina
 fi
 
 coord_terminal=$(jq -r '.coord' <<<"$own")
-[ "$role" != child ] || coord_terminal="${HERDR_COORD:-$coord_terminal}"
+[ "$role" != child ] || [ -n "$coord_terminal" ] || coord_terminal="${HERDR_COORD:-}"
 coord_name=$(jq -r --arg t "$coord_terminal" --argjson reg "$registry" '(map(select(.address == $t)) | first | .session) as $s | if $s == null then empty else $reg[$s].name // empty end' <<<"$live")
 
 roster=$(jq -r --argjson reg "$registry" --argjson max 8 '
@@ -71,7 +72,10 @@ if [ -n "$roster" ] || [ "$role" = coordinator ]; then
   [ -z "$roster" ] || context+=$'\n'"Peers right now (status as of when this was written; ListAgents shows it live):"$'\n'"$roster"
   case "$role" in
     child) context+=$'\n'"$(child_protocol "$coord_name" "$coord_terminal")" ;;
-    coordinator) prefs=""; [ ! -f "$preferences" ] || prefs=$(head -c 3000 "$preferences"); context+=$'\n'"$(coordinator_charter "$prefs")" ;;
+    coordinator)
+      prefs=""; [ ! -f "$preferences" ] || prefs=$(head -c 3000 "$preferences")
+      context+=$'\n'"$(coordinator_charter "$prefs")"
+      context+=$'\n'"$(coordinator_record "$spaces_dir" "$space" "$space_name")" ;;
     *) context+=$'\n'"$(peer_protocol)" ;;
   esac
 fi
