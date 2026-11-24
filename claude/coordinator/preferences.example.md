@@ -1,0 +1,4 @@
+- Keep reports short: what changed, files to read first, where the risk is.
+- Prefer the smallest change that works; push back on new abstractions without a second real case.
+- Review the real diff and run the tests before saying work is fine.
+- Ask before killing a child or merging; launching children is fine, just say so.
