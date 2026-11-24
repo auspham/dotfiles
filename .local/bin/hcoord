@@ -1,0 +1,109 @@
+#!/usr/bin/env bash
+# hcoord: how a coordinator agent launches, watches and stops its child agents in herdr.
+# Each child gets its own tab and its own git worktree, so parallel work never clashes.
+#   hcoord spawn <name> "<task>" [--model M] [--repo DIR] [--base BRANCH]
+#   hcoord ls [--json]          hcoord diff <name> [--stat]
+#   hcoord review <name> approved|changes|pending [note]
+#   hcoord kill <name> [--worktree] [--force]
+set -euo pipefail
+
+die() { echo "hcoord: $*" >&2; exit 1; }
+for tool in hc herdr-app jq git; do command -v "$tool" >/dev/null 2>&1 || die "$tool is not installed"; done
+me="${HC_TERMINAL_ID:-}"
+[ -n "$me" ] || die "run this from the coordinator's own herdr terminal"
+
+children() { hc ls --json --label role=child --label "coord=$me" | jq -r '.terminals[].address'; }
+label_of() { hc get "$1" --json | jq -r --arg k "$2" '.labels[$k] // empty'; }
+
+# The terminal of the child with this task name.
+child_of() {
+  local t
+  for t in $(children); do
+    if [ "$(label_of "$t" task)" = "$1" ]; then echo "$t"; return 0; fi
+  done
+  die "no child named $1"
+}
+
+cmd_spawn() {
+  local name="${1:-}" task="${2:-}" model="" repo="$PWD" base=""
+  [[ $name =~ ^[a-z0-9][a-z0-9-]{0,30}$ ]] || die "the name must be lowercase letters, digits and hyphens"
+  [ -n "$task" ] || die "give the child a task"
+  shift 2
+  while [ $# -gt 0 ]; do
+    case "$1" in --model) model="$2" ;; --repo) repo="$2" ;; --base) base="$2" ;; *) die "unknown option $1" ;; esac
+    shift 2
+  done
+  local root; root=$(git -C "$repo" rev-parse --show-toplevel 2>/dev/null) || die "$repo is not in a git repository"
+  base="${base:-$(git -C "$root" symbolic-ref --short HEAD 2>/dev/null || git -C "$root" rev-parse --short HEAD)}"
+  if (child_of "$name") >/dev/null 2>&1; then die "a child named $name already exists"; fi
+
+  local worktree="$root/.agent-worktrees/$name" exclude
+  exclude="$(git -C "$root" rev-parse --path-format=absolute --git-common-dir)/info/exclude"
+  grep -qxF '.agent-worktrees/' "$exclude" 2>/dev/null || echo '.agent-worktrees/' >> "$exclude"
+  git -C "$root" worktree add -q -b "agent/$name" "$worktree" "$base"
+
+  local argv message launched terminal
+  argv=$(jq -cn --arg me "$me" --arg model "$model" '["env", "HERDR_ROLE=child", "HERDR_COORD=\($me)", "claude"] + (if $model == "" then [] else ["--model", $model] end)')
+  message="$task"$'\n\n'"You work in your own git worktree on branch agent/$name, started from $base. Stay inside this folder. Commit your work on that branch when it is done (signed off, Conventional Commits). When you finish or get stuck, tell your coordinator with SendMessage."
+  launched=$(herdr-app do tab.new --name "$name" --folder "$worktree" --argv "$argv" --task "$message" --focus false)
+  terminal=$(jq -r '.terminal' <<<"$launched")
+  hc label "$terminal" role=child "coord=$me" "task=$name" "worktree=$worktree" "branch=agent/$name" "base=$base" review=pending >/dev/null
+  jq -cn --arg name "$name" --arg terminal "$terminal" --arg worktree "$worktree" --arg branch "agent/$name" '{name: $name, terminal: $terminal, worktree: $worktree, branch: $branch}'
+}
+
+# Everything the child has changed against where it started, committed or not.
+shortstat() { git -C "$1" diff --shortstat "$2" 2>/dev/null | sed 's/^ *//'; }
+
+cmd_ls() {
+  local t info rows=()
+  for t in $(children); do
+    info=$(hc get "$t" --json)
+    rows+=("$(jq -c --arg stat "$(shortstat "$(jq -r '.labels.worktree' <<<"$info")" "$(jq -r '.labels.base' <<<"$info")")" \
+      '{name: .labels.task, terminal: .address, status: (.status.state // "unknown"), review: (.labels.review // "pending"), branch: .labels.branch, diff: $stat}' <<<"$info")")
+  done
+  local all; all=$(printf '%s\n' "${rows[@]}" | jq -s 'map(select(. != null))')
+  if [ "${1:-}" = --json ]; then echo "$all"; return; fi
+  jq -r '.[] | "\(.name)\t\(.terminal)\t\(.status)\t\(.review)\t\(.diff)"' <<<"$all" | column -t -s $'\t'
+}
+
+cmd_diff() {
+  local t worktree base; t=$(child_of "${1:?name}")
+  worktree=$(label_of "$t" worktree); base=$(label_of "$t" base)
+  git -C "$worktree" status --short
+  git -C "$worktree" diff ${2:+--stat} "$base"
+}
+
+cmd_review() {
+  local t; t=$(child_of "${1:?name}")
+  case "${2:-}" in approved | changes | pending) ;; *) die "review is approved, changes or pending" ;; esac
+  hc label "$t" "review=$2" "review_note=${3:0:200}" >/dev/null
+}
+
+cmd_kill() {
+  local name="${1:?name}" remove=false force=false
+  shift; for flag in "$@"; do case "$flag" in --worktree) remove=true ;; --force) force=true ;; *) die "unknown option $flag" ;; esac; done
+  local t worktree tab; t=$(child_of "$name")
+  worktree=$(label_of "$t" worktree); tab=$(label_of "$t" herdr.tab)
+  # Check before stopping anything, so a refusal leaves the agent running.
+  if $remove && ! $force && [ -n "$(git -C "$worktree" status --porcelain)" ]; then
+    die "$name has uncommitted changes; commit them or use --force to discard them"
+  fi
+  hc kill "$t" >/dev/null 2>&1 || true
+  [ -z "$tab" ] || herdr-app do tab.close --id "$tab" >/dev/null 2>&1 || true
+  hc rm "$t" >/dev/null 2>&1 || true
+  if $remove; then
+    local root opts=(); root="$(dirname "$(dirname "$worktree")")"
+    ! $force || opts+=(--force)
+    git -C "$root" worktree remove "${opts[@]}" "$worktree"
+    echo "removed the worktree; branch agent/$name is kept"
+  fi
+}
+
+case "${1:-}" in
+  spawn) shift; cmd_spawn "$@" ;;
+  ls) shift; cmd_ls "$@" ;;
+  diff) shift; cmd_diff "$@" ;;
+  review) shift; cmd_review "$@" ;;
+  kill) shift; cmd_kill "$@" ;;
+  *) sed -n '2,8p' "$0" | sed 's/^# \{0,1\}//'; exit 2 ;;
+esac
