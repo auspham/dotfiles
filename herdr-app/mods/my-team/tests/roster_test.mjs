@@ -31,6 +31,7 @@ assert.equal(cards[0].question, "answer: which one?");
 const viaApp = teamCards({ sessions, spaceId: "spA", terminals: [term("t7", "spA", "s7", { agent: null, app: "claude-code" }), term("t8", "spA", "s8", { agent: null, status: { app: "claude-code", state: "working" } })] });
 assert.deepEqual(viaApp.map((c) => [c.address, c.status]), [["t8", "working"], ["t7", "idle"]], "Claude is recognised however herdr names it");
 assert.equal(cards[1].name, "api-agent", "a card uses the session name");
+assert.equal(cards[1].where, "alpha / 1", "and says where herdr put it");
 assert.equal(cards[0].name, "s2", "else a short session id");
 assert.equal(displayName({ address: "t9", title: "my title", labels: {} }, sessions), "my title");
 assert.equal(spaceName([term("t1", "spA", "s1")], "spA"), "alpha");

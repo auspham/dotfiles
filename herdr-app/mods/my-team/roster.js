@@ -38,6 +38,7 @@ export function teamCards({ terminals, sessions, spaceId }) {
       status: typeof t.status === "string" ? t.status : (t.status?.state ?? "idle"),
       title: t.title || "",
       folder: folderOf(t),
+      where: t.labels?.where ?? "",
       turn: t.turn ?? 0,
       question: t.report?.msg ?? "",
     }))

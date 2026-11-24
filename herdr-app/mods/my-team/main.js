@@ -102,7 +102,7 @@ export default class Team extends View {
       .child(h_flex().gap(8).items_center()
         .child(this.statusMark(t, c.status))
         .child(div().flex_1().min_w(0).truncate().font_semibold().text_color(t.foreground).child(c.name))
-        .child(div().flex_none().text_size(11).text_color(t.dim).child(c.folder)))
+        .child(div().flex_none().text_size(11).text_color(t.dim).child(c.where || c.folder)))
       .child(div().min_w(0).truncate().text_size(11.5).text_color(c.question ? t.blocked : t.muted).child(line || "Nothing yet"));
   }
 

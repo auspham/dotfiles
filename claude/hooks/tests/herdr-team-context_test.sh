@@ -40,7 +40,7 @@ fail() { echo "FAIL: $*" >&2; exit 1; }
 context() { jq -r '.hookSpecificOutput.additionalContext'; }
 
 out=$(run SessionStart s1 | context)
-grep -q 'api-agent \[t2\] idle: fixing the login bug, in api' <<<"$out" || fail "peer in the same space is listed"
+grep -q 'api-agent \[t2\] (herdr alpha / 2) idle: fixing the login bug, in api' <<<"$out" || fail "peer in the same space is listed with its herdr tab"
 grep -q 'You are me-agent' <<<"$out" || fail "the agent is told its own name"
 grep -q 'space "alpha"' <<<"$out" || fail "the space name is given"
 grep -q 'other-agent' <<<"$out" && fail "a peer in another space is hidden"
