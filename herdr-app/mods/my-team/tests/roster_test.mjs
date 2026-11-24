@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { chattyPairs, messageFeed, readTail, toolSummary } from "../feed.js";
-import { childSummary, displayName, parseSessions, spaceName, teamCards } from "../roster.js";
+import { childSummary, displayName, resolveTarget, parseSessions, spaceName, teamCards } from "../roster.js";
 import { MODELS, labelChanges, parseSettings, pickCoordinator, settingsFor, withSetting } from "../settings.js";
 
 const term = (address, space, session, over = {}) => ({
@@ -105,5 +105,10 @@ assert.deepEqual(labelChanges(trio, true, "t2"), [["t2", "role=coordinator"]], "
 assert.deepEqual(labelChanges([{ address: "t1", role: "coordinator" }, trio[1]], true, "t2"), [], "an existing coordinator is kept");
 assert.deepEqual(labelChanges([{ address: "t1", role: "coordinator" }, { address: "t2", role: "child" }, trio[0]], false, "t1"), [["t1", "role="], ["t1", "coord="], ["t2", "role="], ["t2", "coord="]], "switching off clears every role");
 assert.deepEqual(labelChanges([], true, "t1"), [], "nobody to lead, nothing to label");
+
+const withSocket = parseSessions([JSON.stringify({ sessionId: "s7", name: "api-agent", messagingSocketPath: "/run/user/1000/cc-socks/42.sock" })]);
+assert.equal(resolveTarget("uds:/run/user/1000/cc-socks/42.sock", withSocket), "api-agent", "a socket address becomes the session's name");
+assert.equal(resolveTarget("uds:/run/user/1000/cc-socks/99.sock", withSocket), "a closed session", "an address nobody owns is not shown raw");
+assert.equal(resolveTarget("api-agent", withSocket), "api-agent", "a name is kept");
 
 console.log("my-team roster and feed: all checks passed");

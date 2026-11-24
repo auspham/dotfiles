@@ -8,7 +8,7 @@ export function parseSessions(texts) {
   for (const text of texts) {
     try {
       const entry = JSON.parse(text);
-      if (entry?.sessionId) sessions.set(entry.sessionId, { name: entry.name ?? null, busy: entry.status === "busy" });
+      if (entry?.sessionId) sessions.set(entry.sessionId, { name: entry.name ?? null, busy: entry.status === "busy", socket: entry.messagingSocketPath ?? null });
     } catch {
       // A file caught half written is picked up on the next refresh.
     }
@@ -18,6 +18,17 @@ export function parseSessions(texts) {
 
 // herdr reports the program in different fields depending on the call, so any of them may say it is Claude.
 const isClaude = (t) => [t.app, t.agent, t.status?.app, t.program?.key].some((v) => v === "claude-code" || v === "claude");
+
+/**
+ * The session name a SendMessage target stands for. A target is a name, or a socket address such as
+ * `uds:/run/user/1000/cc-socks/123.sock`; an address that no live session owns reads "a closed session".
+ */
+export function resolveTarget(to, sessions) {
+  if (!to.startsWith("uds:")) return to;
+  const socket = to.slice(4);
+  for (const session of sessions.values()) if (session.socket === socket) return session.name ?? to;
+  return "a closed session";
+}
 
 const folderOf = (terminal) => (terminal.foreground?.cwd ?? terminal.cwd ?? "").split("/").filter(Boolean).pop() ?? "";
 

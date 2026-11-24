@@ -6,7 +6,7 @@ import { checking, exec, focused, readTextFile, run, terminals, theme } from "he
 import { coordinatorBadge, reviewChip, taskLine } from "./badges.js";
 import { chattyPairs, messageFeed, readTail } from "./feed.js";
 import { coordinatorControls } from "./controls.js";
-import { childSummary, parseSessions, spaceName, teamCards } from "./roster.js";
+import { childSummary, parseSessions, resolveTarget, spaceName, teamCards } from "./roster.js";
 import { labelChanges, settingsFor, withSetting } from "./settings.js";
 import { applyLabels, readSettings, writeSettings } from "./store.js";
 
@@ -115,7 +115,7 @@ export default class Team extends View {
     if (!feed.length) return [div().w_full().min_w(0).text_size(11.5).text_color(t.dim).child("No messages yet. Agents message each other with SendMessage.")];
     // Sender and receiver on one line, the text under it using the full width and wrapping: nothing is cut at a narrow width.
     return feed.map((m, i) => v_flex().id(`msg-${i}`).w_full().min_w(0).gap(1).text_size(11.5)
-      .child(div().w_full().min_w(0).font_semibold().text_color(t.foreground).child(`${show(m.from)} → ${show(m.to)}`))
+      .child(div().w_full().min_w(0).font_semibold().text_color(t.foreground).child(`${show(m.from)} → ${show(resolveTarget(m.to, this.sessions))}`))
       .child(div().w_full().min_w(0).text_color(t.muted).child(m.text)));
   }
 

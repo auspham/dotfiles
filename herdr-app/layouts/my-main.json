@@ -205,13 +205,13 @@
               }
             },
             {
-              "id": "agent-sound",
+              "id": "my-sound",
               "type": "block",
               "size": {
                 "px": 1
               },
               "content": {
-                "mod": "agent-sound"
+                "mod": "my-sound"
               }
             }
           ]
