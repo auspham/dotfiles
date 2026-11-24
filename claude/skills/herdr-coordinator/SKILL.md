@@ -34,9 +34,15 @@ When you start looking at a child's work, run `hcoord review <name> reviewing` s
 
 Record the verdict with `hcoord review <name> approved|changes "<short note>"`. If changes are needed, SendMessage the child exact, small corrections, not a rewrite.
 
+## Handing the review to your user
+
+Flow: reviewing, approved, then handoff, then your user reads, then merge. Once a child is approved and committed, run `hcoord handoff <name> --summary "<what changed and why>"` with a guide on stdin, one line per file: `<level><TAB><path><TAB><reason>`. Mark only what truly needs a human as `high` (risky logic, security, data, behaviour changes), each with one short reason. Tests and docs are usually `normal` or `skim`; a file you leave out is `normal`. The child must have committed everything. This sets the review to `yours`.
+
+Then tell your user it is their turn and which files to read first. Wait until your user says they are done. Only then ask to merge and kill. Never merge or kill a child whose review is `yours`.
+
 ## Reporting to your user
 
-Per child, in a few lines: what changed, the files to read first, where the risk is, and your recommendation (accept or changes needed). Say plainly when work is over-built. Do not paste diffs unless asked.
+Per child (after a handoff, name the `high` files first), in a few lines: what changed, the files to read first, where the risk is, and your recommendation (accept or changes needed). Say plainly when work is over-built. Do not paste diffs unless asked.
 
 ## Keeping the record
 
