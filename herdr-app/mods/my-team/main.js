@@ -110,7 +110,8 @@ export default class Team extends View {
   }
 
   feedRows(t, feed) {
-    const labels = new Map(this.cards.map((c) => [c.name, c.label]));
+    // The coordinator reads "Coordinator": its tab name is whatever it happens to be working on.
+    const labels = new Map(this.cards.map((c) => [c.name, c.role === "coordinator" ? "Coordinator" : c.label]));
     const show = (name) => labels.get(name) ?? name;
     if (!feed.length) return [div().w_full().min_w(0).text_size(11.5).text_color(t.dim).child("No messages yet. Agents message each other with SendMessage.")];
     // Sender and receiver on one line, the text under it using the full width and wrapping: nothing is cut at a narrow width.
