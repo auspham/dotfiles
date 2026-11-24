@@ -6,6 +6,8 @@
 import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex, ScrollHandle } from "gpui-base";
 import { agents, nextCommand, spaces, machines, panes, run, openOverlay, exec, hc, theme, shared, setShared, watchFolder, window, layout } from "herdr";
+import { splitSpaces } from "./archive.js";
+import { applyCommand, archivedSection, loadArchive, needsYou, readFolded, resume } from "./archive_view.js";
 
 function find(node, id) {
   if (node?.id === id) return node;
@@ -67,7 +69,12 @@ export default class Spaces extends View {
     this.handle = cx.focus_handle();
     this.hadFocus = false;
     cx.timer.every(200, (cx) => { const on = this.holds(); if (on !== this.hadFocus) { this.hadFocus = on; cx.notify(); } });
-    cx.spawn(async (cx) => { for (;;) { if ((await nextCommand()) === "focus") { this.handle.focus(); setShared("nav.focus", "spaces"); } cx.notify(); } });
+    this.archived = []; // archived space ids (~/.config/herdr-app/archived-spaces.json)
+    this.hidden = []; // their rows, as ordered() made them
+    this.archFolded = readFolded();
+    loadArchive(this, cx);
+    cx.timer.every(5000, (cx) => loadArchive(this, cx));
+    cx.spawn(async (cx) => { for (;;) { const cmd = await nextCommand(); if (cmd === "focus") { this.handle.focus(); setShared("nav.focus", "spaces"); } else applyCommand(this, cmd, cx); cx.notify(); } });
     this.git = {}; // where() -> { name, branch, ahead, behind, repo, linked }, null: not a repo
     this.checked = {}; // where() -> when it was last looked at
     this.unsure = new Set(); // where()s git couldn't answer for (a machine away)
@@ -291,7 +298,7 @@ export default class Spaces extends View {
 
   menu(w) {
     // A popup is as tall as its items; height is only the most.
-    openOverlay({ mod: "menu", kind: "popup", width: 200, height: 260, props: { tab: "space", target: { id: w.id } } });
+    openOverlay({ mod: "my-menu", kind: "popup", width: 200, height: 290, props: { tab: "space", target: { id: w.id }, archived: this.archived.includes(w.id) } });
   }
 
   orderingDue(now) {
@@ -341,7 +348,11 @@ export default class Spaces extends View {
 
   // The rows, under a header per machine once one isn't this computer.
   grouped(t, collapsed) {
-    const rows = this.ordered();
+    const all = this.ordered();
+    const { active } = splitSpaces(all.map((r) => r.w), this.archived);
+    const keep = new Set(active.map((w) => w.id));
+    this.hidden = all.filter((r) => !keep.has(r.w.id));
+    const rows = all.filter((r) => keep.has(r.w.id));
     this.order = rows.map((r) => r.w.id);
     if (!this.cur || !this.order.includes(this.cur)) this.cur = spaces().find((s) => s.active)?.id;
     const draw = (r) => (collapsed ? this.compact(r, t) : this.row(r, t));
@@ -475,7 +486,7 @@ export default class Spaces extends View {
       .when(on, (el) => el.bg(t.selected))
       .when(this.holds() && this.cur === w.id, (el) => el.border_1().border_color(t.accent))
       .when(!on, (el) => el.hover((s) => s.bg(t.hover)))
-      .when(this.pressed === w.id && this.over !== w.id, (el) => el.opacity(0.5))
+      .when((this.pressed === w.id && this.over !== w.id) || this.archived.includes(w.id), (el) => el.opacity(0.5))
       .when(this.pressed !== null && this.over === w.id && this.pressed !== w.id, (el) => el.child(
         div().absolute().left(0).right(0).h(2).bg(t.accent)
           .when(fromIndex < i, line => line.bottom(0))
@@ -487,7 +498,7 @@ export default class Spaces extends View {
       })
       .on_mouse_move((_e, cx) => {
         const source = spaces().find(s => s.id === this.pressed);
-        const over = source && (source.machine ?? null) === (w.machine ?? null) ? w.id : null;
+        const over = source && (source.machine ?? null) === (w.machine ?? null) && !this.archived.includes(source.id) && !this.archived.includes(w.id) ? w.id : null;
         if (this.pressed !== null && this.over !== over) {
           this.over = over;
           cx.notify();
@@ -501,7 +512,7 @@ export default class Spaces extends View {
         if (from !== null && over === w.id && from !== w.id) {
           const index = spaces().findIndex(s => s.id === w.id);
           if (index !== -1) run("space.move", { id: from, index: index + 1 });
-        } else if (from === w.id) run("space.select", { id: w.id });
+        } else if (from === w.id) this.archived.includes(w.id) ? resume(this, w.id, cx) : run("space.select", { id: w.id });
         cx.notify();
       })
       .on_mouse_down("right", () => this.menu(w))
@@ -550,7 +561,7 @@ export default class Spaces extends View {
       changed = true;
     }
     if (changed) setShared("space.colors", kept);
-    const list = this.grouped(t, collapsed);
+    const list = [...this.grouped(t, collapsed), ...archivedSection(this, t, collapsed)];
     // Bring the active space into view when it, or its place in the list, changes; a row already in view stays put.
     const active = sp.find(p => p.active)?.id;
     if (active !== this.revealed || this.activeAt !== this.revealedAt) {
@@ -575,7 +586,7 @@ export default class Spaces extends View {
       })
       .child(h_flex().h(31).pl(16).pr(10).items_center().justify_between().text_size(11.5).text_color(t.dim)
         .when(collapsed, el => el.pl(0).pr(0).justify_center())
-        .when(!collapsed, el => el.child(div().font_medium().px(7).py(2).rounded(5).when(this.holds(), (h) => h.bg(t.accent + "30")).text_color(this.holds() ? t.accent : t.dim).child("Spaces")))
+        .when(!collapsed, el => el.child(div().font_medium().px(7).py(2).rounded(5).when(this.holds(), (h) => h.bg(t.accent + "30")).text_color(this.holds() ? t.accent : t.dim).child("Spaces")).child(needsYou(this, t) ?? div().flex_none()))
         .child(div().id("space-new").size(26).flex_none().flex().items_center().justify_center().rounded(6).hover(s => s.bg(t.hover).text_color(t.foreground))
           .on_click(() => run("space.new")).child(svg("mods/workspace-chrome/plus.svg").size(14))))
       .child(v_flex().flex_1().min_h(0).px(collapsed ? 0 : 8).pb(14).overflow_y_scrollbar().mode("always").track_scroll(this.scroll)
