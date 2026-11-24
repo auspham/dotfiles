@@ -27,7 +27,10 @@ export const displayName = (terminal, sessions) => {
   return sessions.get(id)?.name ?? (id ? id.slice(0, 6) : null) ?? (terminal.title || terminal.address);
 };
 
-/** One card per Claude agent in the space, those needing attention first. */
+// The coordinator leads, then everyone else; within a group, agents needing attention come first.
+const rank = (card) => (card.role === "coordinator" ? 0 : 1);
+
+/** One card per Claude agent in the space: the coordinator first, then those needing attention. */
 export function teamCards({ terminals, sessions, spaceId }) {
   return terminals
     .filter((t) => isClaude(t) && t.labels?.["herdr.space"] === spaceId && t.state !== "finished")
@@ -42,10 +45,24 @@ export function teamCards({ terminals, sessions, spaceId }) {
       where: t.labels?.where ?? "",
       turn: t.turn ?? 0,
       question: t.report?.msg ?? "",
+      role: t.labels?.role ?? "",
+      task: t.labels?.task ?? "",
+      branch: t.labels?.branch ?? "",
+      review: t.labels?.review ?? "",
+      reviewNote: t.labels?.review_note ?? "",
     }))
-    .sort((a, b) => (ORDER[a.status] ?? 9) - (ORDER[b.status] ?? 9) || a.address.localeCompare(b.address));
+    .sort((a, b) => rank(a) - rank(b) || (ORDER[a.status] ?? 9) - (ORDER[b.status] ?? 9) || a.address.localeCompare(b.address));
 }
 
 /** The space's name from a terminal's "space / tab" label, for the pane heading. */
 export const spaceName = (terminals, spaceId) =>
   (terminals.find((t) => t.labels?.["herdr.space"] === spaceId)?.labels?.where ?? "").split(" / ")[0];
+
+/** The one line under the heading, such as "2 working, 1 ready for review", or "" when no child exists. */
+export function childSummary(cards) {
+  const children = cards.filter((c) => c.role === "child");
+  if (!children.length) return "";
+  const working = children.filter((c) => c.status === "working").length;
+  const ready = children.filter((c) => c.status !== "working" && c.review === "pending").length;
+  return [working && `${working} working`, ready && `${ready} ready for review`].filter(Boolean).join(", ") || `${children.length} child${children.length === 1 ? "" : "ren"}, nothing waiting`;
+}

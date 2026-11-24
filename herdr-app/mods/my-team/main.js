@@ -3,8 +3,9 @@
 import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
 import { checking, exec, focused, readTextFile, run, terminals, theme } from "herdr";
+import { coordinatorBadge, reviewChip, taskLine } from "./badges.js";
 import { chattyPairs, messageFeed, readTail } from "./feed.js";
-import { parseSessions, spaceName, teamCards } from "./roster.js";
+import { childSummary, parseSessions, spaceName, teamCards } from "./roster.js";
 
 const REFRESH_MS = 3000;
 const TAIL_LINES = 150;
@@ -72,13 +73,17 @@ export default class Team extends View {
   card(t, c) {
     const doing = this.tails.get(c.address)?.tail;
     const line = c.question || doing?.lastTool || doing?.lastText || c.title;
+    const task = taskLine(c);
     return v_flex().id(`team-${c.address}`).gap(3).p(9).rounded(8).bg(t.raised).cursor_pointer()
       .hover((h) => h.bg(t.hover))
       .on_click(() => run("agent.focus", { terminal: c.address }))
       .child(h_flex().gap(8).items_center()
         .child(this.statusMark(t, c.status))
         .child(div().flex_1().min_w(0).truncate().font_semibold().text_color(t.foreground).tooltip(`Session name: ${c.name}`).child(c.label))
+        .when(c.role === "coordinator", (e) => e.child(coordinatorBadge(t)))
+        .when(c.role === "child", (e) => e.child(reviewChip(t, c)))
         .child(div().flex_none().text_size(11).text_color(t.dim).child(c.where || c.folder)))
+      .when(task !== "", (e) => e.child(div().min_w(0).truncate().text_size(11).text_color(t.dim).child(task)))
       .child(div().min_w(0).truncate().text_size(11.5).text_color(c.question ? t.blocked : t.muted).child(line || "Nothing yet"));
   }
 
@@ -106,7 +111,8 @@ export default class Team extends View {
     const all = terminals();
     const spaceId = focused()?.space;
     this.cards = teamCards({ terminals: all, sessions: this.sessions, spaceId });
-    const heading = `${spaceName(all, spaceId) || "This space"} · ${this.cards.length} agent${this.cards.length === 1 ? "" : "s"}`;
+    const summary = childSummary(this.cards);
+    const heading = `${spaceName(all, spaceId) || "This space"} · ${this.cards.length} agent${this.cards.length === 1 ? "" : "s"}${summary ? " · " + summary : ""}`;
     return v_flex().size_full().text_size(12)
       .child(div().flex_none().h(36).px(12).flex().items_center().border_b(1).border_color(t.border).font_semibold().text_color(t.foreground).child(heading))
       .child(v_flex().id("team-list").flex_1().min_h(0).overflow_y_scroll().p(8).gap(7)

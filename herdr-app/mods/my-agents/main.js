@@ -297,6 +297,7 @@ export default class Agents extends View {
     this.listed = new Map(list.map((a) => [a.address, a.status]));
     const all = terminals();
     this.migratePins(all);
+    const roles = new Map(all.map((x) => [x.address, x.labels?.role]));
     const shown = focused()?.agent;
     const now = Date.now();
     this.track(list, now);
@@ -456,6 +457,7 @@ export default class Agents extends View {
         .child(h_flex().flex_1().min_w(0).gap(5).items_center()
           .child(div().min_w(0).max_w(full && more ? 120 : 200).truncate().text_color(idle ? t.muted : t.foreground).child(name))
           .when(full && Boolean(more), el => el.child(div().flex_1().min_w(0).truncate().text_color(t.dim).child(`\u00b7 ${more}`)))
+          .when(roles.get(a.address) === "coordinator", el => el.child(div().flex_none().px(5).h(16).rounded(4).bg(t.working + "26").text_size(10).font_semibold().text_color(t.working).flex().items_center().tooltip("Coordinator: launches and reviews the other agents in this space").child("Coordinator")))
           .when(isPinned, el => el.child(div().flex_none().tooltip("Pinned: stays at the top of its space").child(svg("mods/workspace-chrome/pin.svg").size(12).text_color(t.accent)))))
         .when(Boolean(machine), el => el.child(div().text_size(10).text_color(t.dim).child(machine)))
         .when(subs.length > 0, el => el.child(fold(a, subs)))

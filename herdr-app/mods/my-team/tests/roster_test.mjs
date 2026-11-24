@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { chattyPairs, messageFeed, readTail, toolSummary } from "../feed.js";
-import { displayName, parseSessions, spaceName, teamCards } from "../roster.js";
+import { childSummary, displayName, parseSessions, spaceName, teamCards } from "../roster.js";
 
 const term = (address, space, session, over = {}) => ({
   address, agent: "claude-code", status: "idle", state: "live", turn: 3, title: `title ${address}`,
@@ -68,5 +68,19 @@ const burst = Array.from({ length: 8 }, (_, i) => ({ at: now - i * 1000, from: i
 assert.deepEqual(chattyPairs(burst, now), ["a and b"], "a busy pair is flagged either way round");
 assert.deepEqual(chattyPairs(burst.slice(0, 3), now), [], "a few messages are fine");
 assert.deepEqual(chattyPairs(burst.map((m) => ({ ...m, at: m.at - 3_600_000 })), now), [], "old messages do not count");
+
+const lead = term("t9", "spA", "s1", { labels: { "herdr.space": "spA", "claude.session": "s1", role: "coordinator" } });
+const kid = (address, status, review) => term(address, "spA", "s2", { status, labels: { "herdr.space": "spA", "claude.session": "s2", role: "child", task: "login-fix", branch: "agent/login-fix", review } });
+const group = teamCards({ terminals: [kid("t2", "working", "pending"), term("t1", "spA", "s2", { status: "blocked" }), lead], sessions, spaceId: "spA" });
+assert.deepEqual(group.map((c) => c.address), ["t9", "t1", "t2"], "the coordinator leads, then the agent that needs you");
+assert.equal(group[2].role, "child");
+assert.equal(group[2].task, "login-fix");
+assert.equal(group[2].review, "pending");
+
+const kids = (...states) => states.map(([status, review], i) => ({ role: "child", status, review, address: `t${i}` }));
+assert.equal(childSummary([lead].map(() => ({ role: "coordinator" }))), "", "no children, no summary");
+assert.equal(childSummary(kids(["working", "pending"], ["working", "pending"], ["idle", "pending"])), "2 working, 1 ready for review");
+assert.equal(childSummary(kids(["idle", "approved"])), "1 child, nothing waiting");
+assert.equal(childSummary(kids(["idle", "changes"])), "1 child, nothing waiting", "a child sent back is not waiting for review");
 
 console.log("my-team roster and feed: all checks passed");
