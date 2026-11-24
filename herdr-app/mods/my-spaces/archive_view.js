@@ -15,11 +15,13 @@ export function readFolded() {
 }
 
 /** @param {any} view @param {any} cx */
-export async function loadArchive(view, cx) {
-  const ids = await readArchive();
-  if (JSON.stringify(ids) === JSON.stringify(view.archived)) return;
-  view.archived = ids;
-  cx.notify();
+export function loadArchive(view, cx) {
+  cx.spawn(async (cx) => {
+    const ids = await readArchive();
+    if (JSON.stringify(ids) === JSON.stringify(view.archived)) return;
+    view.archived = ids;
+    cx.notify();
+  });
 }
 
 /**
