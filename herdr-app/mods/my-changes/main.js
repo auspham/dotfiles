@@ -15,6 +15,8 @@ const key = () => JSON.stringify(location());
 // the folder watch would see it, and every refresh would start the next one.
 const READ = ["--no-optional-locks", "-c", "core.fsmonitor=false", "-c", "diff.autoRefreshIndex=false"];
 const MAX_ROWS = 5000;
+// Below this toolbar width the Open in Zed button shortens its label, so the buttons stay on one tidy row.
+const COMPACT_BAR = 440;
 const BASES = ["origin/HEAD", "main", "master", "origin/main", "origin/master", "develop"];
 // What the diff is taken against: HEAD (work), HEAD's parent (commit), or where the branch forked (branch).
 const RANGES = ["work", "commit", "branch"];
@@ -137,7 +139,7 @@ export default class Changes extends View {
     if (props()?.menu) return;
     this.files = []; this.rows = []; this.diffWidth = 0; this.handle = cx.focus_handle(); this.hadFocus = false;
     cx.timer.every(200, (cx) => { const on = this.holds(); if (on !== this.hadFocus) { this.hadFocus = on; cx.notify(); } });
-    this.range = asRange(this.read("range")); this.mode = this.read("mode") === "split" ? "split" : "unified"; this.split = []; this.half = 300; this.ratio = clamp(Number(this.read("ratio")) || 0.5, 0.15, 0.85); this.diffW = 800; this.splitVersion = 0; this.drag = false; this.heights = []; this.marks = {}; this.base = null;
+    this.range = asRange(this.read("range")); this.mode = this.read("mode") === "split" ? "split" : "unified"; this.split = []; this.half = 300; this.ratio = clamp(Number(this.read("ratio")) || 0.5, 0.15, 0.85); this.diffW = 800; this.barW = 600; this.splitVersion = 0; this.drag = false; this.heights = []; this.marks = {}; this.base = null;
     this.question = InputState.new({ placeholder: "Ask about this change, or ask for a fix" });
     this.question.on("change", (_e, cx) => { const has = Boolean(this.question.value().trim()); if (has !== this.hasQuestion) { this.hasQuestion = has; cx.notify(); } });
     this.question.on("submit", (_e, cx) => this.ask("inline", cx));
@@ -994,7 +996,7 @@ export default class Changes extends View {
           .when(this.triaging, (b) => b.child(svg("mods/workspace-chrome/spinner.svg").size(11).flex_none().text_color(t.working).spin(900)))
           .child(this.triaging ? "Triaging…" : judged && untriaged > 0 ? `Triage ${untriaged} more` : "Triage")))
         .child(div().flex_1()).child(div().text_size(11).text_color(t.ansi2).child(`+${add}`)).child(div().text_size(11).text_color(t.ansi1).child(`−${del}`)))
-      .child(h_flex().h(36).flex_none().px(10).gap(4).items_center().border_b(1).border_color(t.border)
+      .child(h_flex().min_h(36).py(4).flex_none().flex_wrap().px(10).gap(4).gap_y(4).items_center().border_b(1).border_color(t.border)
         .child(seg("range-work", "Uncommitted", this.range === "work", true, (_e, cx) => this.setRange("work", cx)))
         .child(seg("range-commit", "Last commit", this.range === "commit", Boolean(this.parent), (_e, cx) => this.setRange("commit", cx))
           .tooltip(this.parent ? `Since the parent of HEAD: "${this.parent.subject}" plus uncommitted changes` : "HEAD has no parent commit"))
@@ -1020,21 +1022,25 @@ export default class Changes extends View {
         })
         .child(div().w_full().h(1).bg(t.border)))
       .when(this.limited, el => el.child(div().px(12).py(4).text_size(11).text_color(t.dim).child("Showing the first 1,000 changed files")))
-      .when(Boolean(openFile), (el) => el.child(h_flex().flex_none().h(36).px(12).gap(8).items_center().border_b(1).border_color(t.border)
-        .child(div().flex_1().min_w(0).truncate().text_size(12).text_color(t.muted).child(this.open))
-        .when(Boolean(openFile && this.stale(openFile)), (e) => e.child(div().text_size(11).text_color(t.blocked).child("changed since you reviewed")))
-        .when(this.truncated, (e) => e.child(div().text_size(11).text_color(t.dim).child(`first ${MAX_ROWS.toLocaleString()} lines`)))
-        .child(h_flex().gap(2).flex_none()
-          .child(seg("mode-unified", "Unified", this.mode === "unified", true, (_e, cx) => this.setMode("unified", cx)))
-          .child(seg("mode-split", "Split", this.mode === "split", true, (_e, cx) => this.setMode("split", cx)))
-          .child(seg("expand", "\u2922", false, true, (_e, cx) => { this.toggleExpand(); cx.notify(); })))
-        .child(div().id("open-zed").h(26).px(10).flex().items_center().rounded(6).cursor_pointer().text_size(12).bg(t.raised).text_color(t.muted)
-          .hover((h) => h.bg(t.hover).text_color(t.foreground)).tooltip("Open in Zed at the selected line, or the first change (key: o)")
-          .on_click((_e, cx) => this.openInEditor(cx)).child("Open in Zed"))
-        .child(div().id("mark-reviewed").h(26).px(10).flex().items_center().rounded(6).cursor_pointer().text_size(12)
-          .bg(openFile && this.reviewed(openFile) ? t.raised : t.solid).text_color(openFile && this.reviewed(openFile) ? t.muted : t.solid_foreground)
-          .on_click((_e, cx) => this.toggleReviewed(this.open, cx, true))
-          .child(openFile && this.reviewed(openFile) ? "Reviewed (undo)" : "Mark reviewed"))))
+      .when(Boolean(openFile), (el) => el.child(v_flex().flex_none().px(12).py(6).gap(6).border_b(1).border_color(t.border)
+        .on_size_change((size, cx) => { if (Math.abs(size.width - this.barW) > 1) { this.barW = size.width; cx.notify(); } })
+        .child(h_flex().gap(8).items_center()
+          .child(div().flex_1().min_w(0).truncate().text_size(12).text_color(t.muted).child(this.open))
+          .when(Boolean(openFile && this.stale(openFile)), (e) => e.child(div().flex_none().text_size(11).text_color(t.blocked).child("changed since you reviewed")))
+          .when(this.truncated, (e) => e.child(div().flex_none().text_size(11).text_color(t.dim).child(`first ${MAX_ROWS.toLocaleString()} lines`))))
+        .child(h_flex().gap(8).gap_y(6).flex_wrap().items_center()
+          .child(h_flex().gap(2).flex_none()
+            .child(seg("mode-unified", "Unified", this.mode === "unified", true, (_e, cx) => this.setMode("unified", cx)))
+            .child(seg("mode-split", "Split", this.mode === "split", true, (_e, cx) => this.setMode("split", cx)))
+            .child(seg("expand", "⤢", false, true, (_e, cx) => { this.toggleExpand(); cx.notify(); })))
+          .child(div().flex_1())
+          .child(div().id("open-zed").h(26).px(10).flex().flex_none().items_center().rounded(6).cursor_pointer().text_size(12).bg(t.raised).text_color(t.muted)
+            .hover((h) => h.bg(t.hover).text_color(t.foreground)).tooltip("Open in Zed at the selected line, or the first change (key: o)")
+            .on_click((_e, cx) => this.openInEditor(cx)).child(this.barW < COMPACT_BAR ? "Zed" : "Open in Zed"))
+          .child(div().id("mark-reviewed").h(26).px(10).flex().flex_none().items_center().rounded(6).cursor_pointer().text_size(12)
+            .bg(openFile && this.reviewed(openFile) ? t.raised : t.solid).text_color(openFile && this.reviewed(openFile) ? t.muted : t.solid_foreground)
+            .on_click((_e, cx) => this.toggleReviewed(this.open, cx, true))
+            .child(openFile && this.reviewed(openFile) ? "Reviewed (undo)" : "Mark reviewed")))))
       .when(Boolean(banner), (el) => el.child(banner))
       .child(v_flex().id("review-area").flex_1().min_h(0).relative()
         .on_size_change((size, cx) => { if (Math.abs(size.height - this.areaH) > 1) { this.areaH = size.height; cx.notify(); } })
