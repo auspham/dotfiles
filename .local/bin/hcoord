@@ -3,7 +3,7 @@
 # Each child gets its own tab and its own git worktree, so parallel work never clashes.
 #   hcoord spawn <name> "<task>" [--model M] [--effort E] [--repo DIR] [--base BRANCH]   (model and effort: the Team panel's choice unless given)
 #   hcoord ls [--json]          hcoord diff <name> [--stat]
-#   hcoord review <name> approved|changes|pending [note]
+#   hcoord review <name> approved|changes|pending|reviewing [note]
 #   hcoord kill <name> [--worktree] [--force]
 #   hcoord adopt [--from <space-id>]   (take over the children recorded in a space's ledger, or report them orphaned)
 # spawn, review and kill also append to $COORDINATOR_HOME/spaces/<space>/ledger.jsonl (default ~/.claude/coordinator), the record a new coordinator adopts from.
@@ -109,7 +109,7 @@ cmd_diff() {
 
 cmd_review() {
   local t; t=$(child_of "${1:?name}")
-  case "${2:-}" in approved | changes | pending) ;; *) die "review is approved, changes or pending" ;; esac
+  case "${2:-}" in approved | changes | pending | reviewing) ;; *) die "review is approved, changes, pending or reviewing" ;; esac
   hc label "$t" "review=$2" "review_note=${3:0:200}" >/dev/null
   ledger_add review "$1" "$(jq -cn --arg verdict "$2" --arg note "${3:-}" '{verdict: $verdict, note: $note}')"
 }
