@@ -13,6 +13,7 @@ export const coordinatorBadge = (t) => chip("Coordinator", t.working);
 
 /** A child's review state; the note is its tooltip. */
 export function reviewChip(t, card) {
+  if (card.review === "yours") return chip("Your turn", t.blocked).tooltip(card.reviewNote || "The coordinator approved this and handed the review to you");
   if (card.review === "reviewing") {
     return chip("Reviewing", t.working, svg("mods/workspace-chrome/spinner.svg").size(10).flex_none().text_color(t.working).spin(900)).tooltip(card.reviewNote || "The coordinator is reading the diff");
   }

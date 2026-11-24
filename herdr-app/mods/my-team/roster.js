@@ -69,12 +69,12 @@ export function teamCards({ terminals, sessions, spaceId }) {
 export const spaceName = (terminals, spaceId) =>
   (terminals.find((t) => t.labels?.["herdr.space"] === spaceId)?.labels?.where ?? "").split(" / ")[0];
 
-/** The one line under the heading, such as "2 working, 1 ready for review", or "" when no child exists. */
+/** The one line under the heading, such as "2 working, 1 waiting for you", or "" when no child exists. */
 export function childSummary(cards) {
   const children = cards.filter((c) => c.role === "child");
   if (!children.length) return "";
   const reviewing = children.filter((c) => c.review === "reviewing").length;
   const working = children.filter((c) => c.status === "working" && c.review !== "reviewing").length;
-  const ready = children.filter((c) => c.status !== "working" && c.review === "pending").length;
-  return [working && `${working} working`, reviewing && `${reviewing} in review`, ready && `${ready} ready for review`].filter(Boolean).join(", ") || `${children.length} child${children.length === 1 ? "" : "ren"}, nothing waiting`;
+  const waiting = children.filter((c) => c.review === "yours").length;
+  return [working && `${working} working`, reviewing && `${reviewing} in review`, waiting && `${waiting} waiting for you`].filter(Boolean).join(", ") || `${children.length} child${children.length === 1 ? "" : "ren"}, nothing waiting`;
 }

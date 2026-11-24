@@ -16,5 +16,6 @@ export function coordinatorNote(t, all, focusedAddress) {
       : "The coordinator edits no code, and has no children yet."))
     .children(kids.map((k) => div().id(`child-${k.address}`).px(8).h(26).flex().items_center().rounded(6).bg(t.raised).cursor_pointer()
       .hover((h) => h.bg(t.hover)).text_color(t.foreground).on_click(() => run("agent.focus", { terminal: k.address }))
-      .child(`${k.task}${k.branch ? " on " + k.branch : ""}`)));
+      .child(div().flex_1().min_w(0).truncate().child(`${k.task}${k.branch ? " on " + k.branch : ""}`))
+      .when(k.yours, (e) => e.child(div().flex_none().px(6).h(18).flex().items_center().rounded(5).bg(t.blocked + "26").text_size(10.5).font_semibold().text_color(t.blocked).child("Your turn")))));
 }

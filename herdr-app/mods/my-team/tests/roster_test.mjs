@@ -80,7 +80,7 @@ assert.equal(group[2].review, "pending");
 
 const kids = (...states) => states.map(([status, review], i) => ({ role: "child", status, review, address: `t${i}` }));
 assert.equal(childSummary([lead].map(() => ({ role: "coordinator" }))), "", "no children, no summary");
-assert.equal(childSummary(kids(["working", "pending"], ["working", "pending"], ["idle", "pending"])), "2 working, 1 ready for review");
+assert.equal(childSummary(kids(["working", "pending"], ["working", "pending"], ["idle", "pending"])), "2 working");
 assert.equal(childSummary(kids(["idle", "approved"])), "1 child, nothing waiting");
 assert.equal(childSummary(kids(["idle", "changes"])), "1 child, nothing waiting", "a child sent back is not waiting for review");
 
@@ -120,6 +120,8 @@ assert.equal(feedCount(1), "1 message");
 assert.notEqual(messageKey({ at: 1, from: "a", to: "b" }), messageKey({ at: 2, from: "a", to: "b" }), "messages have distinct keys");
 
 const reviewed = [{ role: "child", status: "idle", review: "reviewing" }, { role: "child", status: "idle", review: "pending" }];
-assert.equal(childSummary(reviewed), "1 in review, 1 ready for review", "a child being reviewed is counted as in review, not waiting");
+assert.equal(childSummary(reviewed), "1 in review", "a child being reviewed is counted as in review, not waiting");
+
+assert.equal(childSummary(kids(["working", "pending"], ["idle", "yours"], ["idle", "yours"])), "1 working, 2 waiting for you", "a child whose review is yours is counted as waiting for you");
 
 console.log("my-team roster and feed: all checks passed");
