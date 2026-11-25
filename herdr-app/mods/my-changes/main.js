@@ -6,8 +6,12 @@ import { coordinatorNote } from "./coordinator.js";
 import { GuideSource } from "./guide_view.js";
 import { LEVELS, LEVEL_LABEL, VERDICT_SCHEMA, pathFlags, diffFlags, isTest, isCode, testsChangedCode, levelOf, splitDiff, triagePrompt } from "./triage.js";
 import { followFocus } from "./review_pane.js";
-import { isReviewPane, followedTerminal, paneLocation, paneShown, openReviewPane, publishReview, requestToggle, takeToggle } from "./review_link.js";
+import { isReviewPane, followedTerminal, paneLocation, paneShown, openReviewPane, publishReview, publishThreads, paneThreads, requestToggle, takeToggle } from "./review_link.js";
 import { paneView, syncPane } from "./review_pane_view.js";
+import { CommentStore } from "./comment_store.js";
+import { deliverer, pollReplies } from "./comment_send.js";
+import { commentLayout, blockView } from "./comment_view.js";
+import { openComposer, closeComposer, clickBlock, submitComposer, composerBar } from "./comment_actions.js";
 
 let lastLocation = null;
 function location() {
@@ -158,10 +162,16 @@ export default class Changes extends View {
     this.sel = null; this.chat = { session: null, messages: [] }; this.hasQuestion = false; this.threadScroll = ScrollHandle.new(); this.scrollThreads = false; this.threadH = clamp(Number(this.read("threadH")) || 240, 90, 900); this.areaH = 700; this.vdrag = null;
     this.listH = Number(this.read("listH")) || 0; this.listSeen = 200; this.panelH = 800; this.ldrag = null; // listH 0: as tall as its rows
     // The review pane copy draws what the side panel publishes, taken in by a timer since render must not change state; it reads no git state of its own.
-    if (isReviewPane()) { cx.timer.every(250, (cx) => syncPane(this, key(), cx)); return; }
+    this.comments = new CommentStore(isReviewPane()); this.deliver = deliverer(this, this.comments); this.composer = null;
+    this.commentInput = InputState.new({ placeholder: "Comment on these lines; Enter sends it" });
+    this.commentInput.on("submit", (_e, cx) => submitComposer(this, cx));
+    this.commentInput.on("focus", (_e, cx) => { this.typing = true; cx.notify(); });
+    this.commentInput.on("blur", (_e, cx) => { this.typing = false; cx.notify(); });
+    if (isReviewPane()) { cx.timer.every(250, (cx) => { syncPane(this, key(), cx); if (this.comments.mirrorFrom(paneThreads(this.root, this.open))) cx.notify(); }); return; }
     this.refresh(cx);
     cx.timer.every(10000, (cx) => this.refresh(cx));
-    cx.timer.every(400, (cx) => { this.applyFocus(cx); const path = takeToggle(this); if (path) this.toggleReviewed(path, cx, true); });
+    cx.timer.every(400, (cx) => { this.applyFocus(cx); const path = takeToggle(this); if (path) this.toggleReviewed(path, cx, true); if (this.comments.takeRequest(this.root, this.deliver, cx)) { publishThreads(this); cx.notify(); } });
+    cx.timer.every(3000, (cx) => this.pollComments(cx));
     cx.spawn(async (cx) => { for (;;) { this.command(await nextCommand(), cx); cx.notify(); } });
     // The chat runs tests too; watch for its runs while it answers.
     cx.timer.every(3000, (cx) => { if (this.root && (this.testsRunning() || this.chat.messages.some((m) => m.status === "pending"))) this.loadTests(cx); });
@@ -280,6 +290,18 @@ export default class Changes extends View {
     this.scrollThreads = true;
     if (want.path) this.pick(want.path, cx, true);
     cx.notify();
+  }
+
+  publishComments() { publishThreads(this); }
+
+  // Answers agents sent back with hreview, read only while a thread waits on an agent.
+  pollComments(cx) {
+    if (this.pollingComments || !this.comments.anyWaiting()) return;
+    this.pollingComments = true;
+    cx.spawn(async (cx) => {
+      try { if (await pollReplies(this.comments, this.on ?? null)) { publishThreads(this); cx.notify(); } }
+      finally { this.pollingComments = false; }
+    });
   }
 
   setMode(mode, cx) { this.sel = null; this.mode = mode; this.write("mode", mode); cx?.notify(); }
@@ -839,7 +861,7 @@ export default class Changes extends View {
         if (this.flagsFor !== `${root}|${against}`) { this.flagsFor = `${root}|${against}`; this.flags = new Map(); }
         try { await this.updateFlags(git, files, against, head.code === 0, root, on); } catch { /* flags are a hint; the list still shows */ }
         if (key() !== context) return;
-        this.loadMarks(); this.loadVerdicts();
+        this.loadMarks(); this.loadVerdicts(); this.comments.sync(root, this.range);
         if (this.threadsRoot !== root) { this.threadsRoot = root; this.loadChat(); }
         if (key() !== context) return;
         this.on = on; this.hasHead = head.code === 0; this.files = files; this.limited = entries.length > 1000; this.error = null;
@@ -897,7 +919,7 @@ export default class Changes extends View {
   }
 
   pick(path, cx, force = false) {
-    this.sel = null;
+    this.sel = null; this.composer = null;
     this.open = this.open === path && !force ? null : path;
     if (this.open) for (const dir of [...this.foldedDirs]) if (this.open.startsWith(`${dir.slice(dir.indexOf("|") + 1)}/`)) this.foldedDirs.delete(dir);
     if (this.open) { this.scrollThreads = true; this.lastPath = this.open; this.write(this.lastKey(), JSON.stringify({ path: this.open, range: this.range })); } this.setLines([]); this.note = null;
@@ -937,20 +959,20 @@ export default class Changes extends View {
       : div().flex_1().min_w(0).truncate().child(row.text);
   }
 
-  diffRow(row, t, selected = false) {
+  diffRow(row, t, selected = false, marked = false) {
     const { kind, number, text } = row;
     if (kind === "@") return div().w_full().px(12).h(20).flex_none().truncate().bg(t.raised).text_color(t.dim).child(text);
     return h_flex().w_full().h(20).flex_none().gap(10).when(kind === "+", (e) => e.bg(t.ansi2 + "18")).when(kind === "-", (e) => e.bg(t.ansi1 + "18")).when(selected, (e) => e.bg(t.accent + "33"))
-      .child(div().w(30).flex_none().text_right().text_color(t.dim).child(number === undefined ? "" : String(number)))
+      .child(div().w(30).flex_none().text_right().text_color(marked ? t.accent : t.dim).when(marked, (e) => e.border_l(2).border_color(t.accent)).child(number === undefined ? "" : String(number)))
       .child(this.code(row, t));
   }
 
-  splitRow(row, t, selected = false) {
+  splitRow(row, t, selected = false, marked = false) {
     if (row.kind === "@") return div().w_full().px(12).h(LINE_H).flex_none().truncate().bg(t.raised).text_color(t.dim).child(row.text);
     if (row.kind !== "pair") return div().w_full().px(12).h(LINE_H).flex_none().truncate().text_color(t.dim).child(row.text);
     const side = (r, lines, width) => h_flex().w(width).flex_none().h(row.n * LINE_H).gap(GAP).overflow_hidden()
       .when(Boolean(r) && r.kind === "-", (e) => e.bg(t.ansi1 + "18")).when(Boolean(r) && r.kind === "+", (e) => e.bg(t.ansi2 + "18")).when(!r, (e) => e.bg(t.raised + "80")).when(selected && Boolean(r), (e) => e.bg(t.accent + "33"))
-      .child(div().w(NUMBER_W).h(LINE_H).flex_none().text_right().text_color(t.dim).child(r?.number === undefined ? "" : String(r.number)))
+      .child(div().w(NUMBER_W).h(LINE_H).flex_none().text_right().text_color(marked && r ? t.accent : t.dim).when(marked && Boolean(r), (e) => e.border_l(2).border_color(t.accent)).child(r?.number === undefined ? "" : String(r.number)))
       .child(lines
         ? v_flex().flex_1().min_w(0).children(lines.map((line) => h_flex().h(LINE_H).flex_none().whitespace_nowrap().children(line.map((k) => div().flex_none().text_color(tone(t, k.c)).child(k.s)))))
         : div().flex_1());
@@ -1013,16 +1035,17 @@ export default class Changes extends View {
 
   // The open file's diff, unified or split, with the split's drag handle.
   diffBox(t, splitting) {
+    const lay = commentLayout(this, splitting);
+    const draw = (it) => ("block" in it ? blockView(it.block, t, lay.width)
+      : splitting ? this.splitRow(this.split[it.row], t, this.isSel(it.row), lay.marked.has(it.row)) : this.diffRow(this.rows[it.row], t, this.isSel(it.row), lay.marked.has(it.row)));
     return div().flex_1().min_h(0).relative().font_family(settings().font_family ?? "JetBrains Mono").text_size(11)
       .on_mouse_down("left", (ev) => { this.shift = Boolean(ev.modifiers?.shift); })
       .on_size_change((size, cx) => { if (Math.abs(size.width - this.diffW) > 1) { this.diffW = size.width; cx.notify(); } })
       .child(div().id("changes-diff-x").size_full().overflow_x_scrollbar()
-        .child(div().w_full().min_w(splitting ? 0 : this.diffWidth).h_full().child(v_virtual_list("changes-diff", splitting ? this.split.length : this.rows.length, splitting ? this.heights : LINE_H, (i) => `${this.mode}${i}`,
-          (range) => splitting
-            ? this.split.slice(range.start, range.end).map((row, k) => this.splitRow(row, t, this.isSel(range.start + k)))
-            : this.rows.slice(range.start, range.end).map((row, k) => this.diffRow(row, t, this.isSel(range.start + k)))).size_full()
-            .on_item_click((key, cx) => { const extend = this.shift; this.shift = false; this.pickRow(key, extend, cx); })
-            .on_item_secondary_click((key, _ev, cx) => this.pickRow(key, true, cx)))))
+        .child(div().w_full().min_w(splitting ? 0 : this.diffWidth).h_full().child(v_virtual_list("changes-diff", lay.items.length, lay.heights, (i) => ("block" in lay.items[i] ? `${this.mode}${lay.items[i].block.key}` : `${this.mode}${lay.items[i].row}`),
+          (range) => lay.items.slice(range.start, range.end).map(draw)).size_full()
+            .on_item_click((key, cx) => { const extend = this.shift; this.shift = false; if (!clickBlock(this, key, cx)) this.pickRow(key, extend, cx); })
+            .on_item_secondary_click((key, _ev, cx) => { if (!clickBlock(this, key, cx)) this.pickRow(key, true, cx); }))))
       .child(Scrollbar.vertical("changes-diff").viewport_from_layout().absolute().inset_0())
       .when(splitting && this.split.length > 0, (e) => e.child(div().id("split-handle").absolute().top(0).bottom(0).left((this.leftW ?? 0) - 3).w(7).cursor_col_resize()
         .on_mouse_down("left", (ev, cx) => {
@@ -1033,7 +1056,8 @@ export default class Changes extends View {
       .when(splitting && this.drag, (e) => e.child(div().id("split-drag").absolute().inset_0().cursor_col_resize()
         .on_mouse_move((ev, cx) => { this.ratio = clamp(ev.local_position.x / Math.max(1, this.diffW), 0.15, 0.85); cx.notify(); })
         .on_mouse_up("left", (_ev, cx) => { this.drag = false; this.write("ratio", String(this.ratio)); cx.notify(); })))
-      .when(!this.open && this.files.length > 0, (e) => e.child(div().absolute().top(6).px(12).text_color(t.dim).child("Select a file to view its changes")));
+      .when(!this.open && this.files.length > 0, (e) => e.child(div().absolute().top(6).px(12).text_color(t.dim).child("Select a file to view its changes")))
+      .children([composerBar(this, t)].filter(Boolean));
   }
 
   render(cx) {
@@ -1051,10 +1075,12 @@ export default class Changes extends View {
     const reviewedCount = this.files.filter((f) => this.reviewed(f)).length;
     return v_flex().id("changes").relative().size_full().min_h(0).rounded(10).overflow_hidden().bg(t.background).border_1().border_color(this.holds() ? t.accent : t.border).text_color(t.foreground).text_size(13).track_focus(this.handle)
       .on_key_down((e, cx) => {
-        if (e.key === "o" && !this.asking && !e.modifiers.control && !e.modifiers.alt && !e.modifiers.shift && this.open) { this.openInEditor(cx); cx.stop_propagation(); return; }
-        if (e.key === "tab" && !this.asking && !e.modifiers.control && !e.modifiers.alt && !e.modifiers.shift) { this.question.focus(); cx.stop_propagation(); cx.notify(); return; }
+        if (e.key === "c" && !this.typing && !this.asking && !e.modifiers.control && !e.modifiers.alt && this.sel) { openComposer(this, cx); cx.stop_propagation(); return; }
+        if (e.key === "o" && !this.typing && !this.asking && !e.modifiers.control && !e.modifiers.alt && !e.modifiers.shift && this.open) { this.openInEditor(cx); cx.stop_propagation(); return; }
+        if (e.key === "tab" && !this.typing && !this.asking && !e.modifiers.control && !e.modifiers.alt && !e.modifiers.shift) { this.question.focus(); cx.stop_propagation(); cx.notify(); return; }
         const step = { down: "next", j: "next", up: "prev", k: "prev" }[e.key];
         if (step && !this.typing && !this.asking && !e.modifiers.control && !e.modifiers.alt && !e.modifiers.shift) { this.command(step, cx); cx.stop_propagation(); cx.notify(); return; }
+        if (e.key === "escape" && this.composer) { closeComposer(this, cx); cx.stop_propagation(); return; }
         if (e.key === "escape" && !this.typing && !this.asking && this.sel) { this.sel = null; cx.stop_propagation(); cx.notify(); return; }
         if (e.key === "escape" && (this.typing || this.asking)) { this.typing = false; this.asking = false; this.handle.focus(); cx.stop_propagation(); cx.notify(); }
       })
