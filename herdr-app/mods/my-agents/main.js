@@ -6,6 +6,7 @@ import { agents, appHome, readTextFile, nextCommand, terminals, panes, focused, 
 
 import { ARCHIVE_FILE, parseArchived, splitArchived } from "./archive.js";
 import { archivedSection } from "./archive_view.js";
+import { parentOf, isLent, lentNote } from "./parents.js";
 
 function find(node, id) {
   if (node?.id === id) return node;
@@ -237,11 +238,11 @@ export default class Agents extends View {
 
   // Live sub-agents of `addr`, depth first, each with the tree lines in front of it.
   tree(all, addr, lead = []) {
-    const kids = all.filter((k) => k.parent === addr && k.state === "live");
+    const kids = all.filter((k) => parentOf(k) === addr && k.state === "live");
     return kids.flatMap((k, i) => {
       const last = i === kids.length - 1;
       return [
-        { t: k, lines: [...lead, last ? "└" : "├"] },
+        { t: k, lines: [...lead, last ? "└" : "├"], lent: isLent(k) ? lentNote(k, all) : null },
         ...this.tree(all, k.address, [...lead, last ? "" : "│"]),
       ];
     });
@@ -270,6 +271,7 @@ export default class Agents extends View {
         .when(l === "└" || l === "├", el => el.border_b(1.5).rounded_bl(6))))
       .when(Boolean(pic), el => el.child(div().mr(8).child(pic)))
       .child(div().flex_1().truncate().text_color(on ? t.foreground : t.muted).child(k.name || k.template || k.program?.name || k.address))
+      .when(Boolean(s.lent), el => el.child(div().id(`lent-${k.address}`).flex_none().mr(6).px(4).h(14).rounded(4).bg(t.dim + "26").text_size(9.5).text_color(t.dim).flex().items_center().tooltip(s.lent).child("lent")))
       .child(this.status(t, { status: st }, compact));
   }
 
