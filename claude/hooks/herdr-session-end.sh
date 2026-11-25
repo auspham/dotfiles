@@ -20,5 +20,5 @@ esac
 current=$(hc get "$HC_TERMINAL_ID" --json 2>/dev/null | jq -r '.labels["claude.session"] // empty')
 [ "$current" = "$session" ] || exit 0
 
-# The role goes too, so the next agent started in this space can become its coordinator.
+# The role and coord go too, so whatever agent next runs in this terminal decides its role afresh.
 hc label "$HC_TERMINAL_ID" "claude.session=" "role=" "coord=" >/dev/null 2>&1 || true
