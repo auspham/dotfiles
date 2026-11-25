@@ -6,9 +6,10 @@
 #   hcoord review <name> approved|changes|pending|reviewing|yours [note]
 #   hcoord handoff <name> [--summary TEXT]   (stdin: one "high|normal|skim<TAB>path<TAB>reason" per file; hands the committed work to the user)
 #   hcoord kill <name> [--worktree] [--force]
+#   hcoord lend <name> --to <terminal>   hcoord return <name>   (lend a child to another coordinator in the space; the borrower or the lender returns it)
 #   hcoord adopt [--from <space-id>]   (take over the children recorded in a space's ledger, or report them orphaned)
-# review, handoff and kill act only on a child whose coord is the caller; a child name is unique across the space.
-# spawn, review, handoff and kill also append to $COORDINATOR_HOME/spaces/<space>/ledger.jsonl (default ~/.claude/coordinator), the record a new coordinator adopts from.
+# review, handoff, kill and lend act only on a child whose coord is the caller; a child name is unique across the space.
+# spawn, review, handoff, kill, lend and return also append to $COORDINATOR_HOME/spaces/<space>/ledger.jsonl (default ~/.claude/coordinator), the record a new coordinator adopts from.
 set -euo pipefail
 
 die() { echo "hcoord: $*" >&2; exit 1; }
@@ -18,6 +19,7 @@ me="${HC_TERMINAL_ID:-}"
 
 . "$(dirname "${BASH_SOURCE[0]}")/hcoord-ledger.sh"
 . "$(dirname "${BASH_SOURCE[0]}")/hcoord-adopt.sh"
+. "$(dirname "${BASH_SOURCE[0]}")/hcoord-loan.sh"
 
 children() { hc ls --json --label role=child --label "coord=$me" | jq -r '.terminals[].address'; }
 label_of() { hc get "$1" --json | jq -r --arg k "$2" '.labels[$k] // empty'; }
@@ -162,6 +164,8 @@ case "${1:-}" in
   review) shift; cmd_review "$@" ;;
   handoff) shift; cmd_handoff "$@" ;;
   kill) shift; cmd_kill "$@" ;;
+  lend) shift; cmd_lend "$@" ;;
+  return) shift; cmd_return "$@" ;;
   adopt) shift; cmd_adopt "$@" ;;
-  *) sed -n '2,12p' "$0" | sed 's/^# \{0,1\}//'; exit 2 ;;
+  *) sed -n '2,13p' "$0" | sed 's/^# \{0,1\}//'; exit 2 ;;
 esac
