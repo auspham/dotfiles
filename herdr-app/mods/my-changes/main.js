@@ -12,8 +12,7 @@ import { CommentStore } from "./comment_store.js";
 import { sender, pollReplies } from "./comment_send.js";
 import { listening } from "./comment_replies.js";
 import { commentLayout, blockView } from "./comment_view.js";
-import { openComposer, closeComposer, clickBlock, submitComposer, composerBar, sendDrafts } from "./comment_actions.js";
-import { sendLabel } from "./comment_batch.js";
+import { openComposer, closeComposer, clickBlock, submitComposer, composerBar, sendButton } from "./comment_actions.js";
 
 let lastLocation = null;
 function location() {
@@ -1029,8 +1028,7 @@ export default class Changes extends View {
         .child(div().id("open-zed").h(26).px(10).flex().flex_none().items_center().rounded(6).cursor_pointer().text_size(12).bg(t.raised).text_color(t.muted)
           .hover((h) => h.bg(t.hover).text_color(t.foreground)).tooltip("Open in Zed at the selected line, or the first change (key: o)")
           .on_click((_e, cx) => this.openInEditor(cx)).child(this.barW < COMPACT_BAR ? "Zed" : "Open in Zed"))
-        .when(this.comments.drafts() > 0, (e) => e.child(div().id("send-drafts").h(26).px(10).flex().flex_none().items_center().rounded(6).cursor_pointer().text_size(12).bg(t.raised).text_color(t.foreground)
-          .hover((h) => h.bg(t.hover)).tooltip("Send every draft comment to the agent at once").on_click((_e, cx) => sendDrafts(this, cx)).child(sendLabel(this.comments.drafts()))))
+        .children([sendButton(this, t)].filter(Boolean))
         .child(div().id("mark-reviewed").h(26).px(10).flex().flex_none().items_center().rounded(6).cursor_pointer().text_size(12)
           .bg(openFile && this.reviewed(openFile) ? t.raised : t.solid).text_color(openFile && this.reviewed(openFile) ? t.muted : t.solid_foreground)
           .on_click((_e, cx) => this.toggleReviewed(this.open, cx, true))

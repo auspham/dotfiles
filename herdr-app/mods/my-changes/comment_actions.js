@@ -64,6 +64,14 @@ export function sendDrafts(host, cx) {
   return batch;
 }
 
+/** The file bar's Send button beside Mark reviewed, or null with no drafts. @param {any} host @param {object} t theme */
+export function sendButton(host, t) {
+  const n = host.comments.drafts();
+  if (!n) return null;
+  return div().id("send-drafts").h(26).px(10).flex().flex_none().items_center().rounded(6).cursor_pointer().text_size(12).bg(t.raised).text_color(t.foreground)
+    .hover((h) => h.bg(t.hover)).tooltip("Send every draft comment to the agent at once").on_click((_e, cx) => sendDrafts(host, cx)).child(sendLabel(n));
+}
+
 /** @param {object} t @param {{ id: string, label: string, click: Function, strong?: boolean }} spec */
 const button = (t, { id, label, click, strong = false }) => div().id(id).h(24).px(9).flex().flex_none().items_center().rounded(6).text_size(11.5).cursor_pointer()
   .bg(strong ? t.solid : t.raised).text_color(strong ? t.solid_foreground : t.muted).hover((h) => h.bg(strong ? t.solid : t.hover).text_color(strong ? t.solid_foreground : t.foreground)).on_click(click).child(label);
