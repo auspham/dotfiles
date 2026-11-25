@@ -65,19 +65,19 @@ owner_terminal=$(jq -r '.owner' <<<"$own")
 
 roster=$(jq -r --argjson reg "$registry" --argjson max 8 '
   .[:$max] | map("- \($reg[.session].name) [\(.address)] (herdr \(.where // "?")) \($reg[.session].status // "unknown")\(if .role == "coordinator" then " (coordinator)" elif .role == "child" then " (child)" else "" end): \(.title[:60]), in \(.folder | split("/") | last)") | join("\n")' <<<"$live")
-own_name=$(jq -rn --argjson reg "$registry" --arg me "$session" '$reg[$me].name // "unnamed"')
+own_name=$(jq -rn --argjson reg "$registry" --arg me "$session" '$reg[$me].name // empty')
 space_name=$(jq -r '(.where // "this space") | split(" / ")[0]' <<<"$own")
 
 context=""
 if [ -n "$roster" ] || [ "$role" = coordinator ] || [ "$role" = child ]; then
-  context="You are one of several Claude agents sharing the herdr space \"$space_name\". You are $own_name (terminal $HC_TERMINAL_ID)."
+  context="You are one of several Claude agents sharing the herdr space \"$space_name\". You are ${own_name:-unnamed} (terminal $HC_TERMINAL_ID)."
   [ -z "$roster" ] || context+=$'\n'"Peers right now (status as of when this was written; ListAgents shows it live):"$'\n'"$roster"
   case "$role" in
     child) context+=$'\n'"$(child_protocol "$coord_name" "$coord_terminal" "$(name_of "$owner_terminal")" "$owner_terminal")"$'\n'"$(notes_pointer "$spaces_dir/$space/notes.md")" ;;
     coordinator)
       prefs=""; [ ! -f "$preferences" ] || prefs=$(head -c 3000 "$preferences")
       context+=$'\n'"$(coordinator_charter "$prefs")"
-      context+=$'\n'"$(coordinator_record "$spaces_dir" "$space" "$space_name")" ;;
+      context+=$'\n'"$(coordinator_record "$spaces_dir/$space" "$space_name")" ;;
     *) context+=$'\n'"$(peer_protocol)"$'\n'"$(notes_pointer "$spaces_dir/$space/notes.md")" ;;
   esac
 fi

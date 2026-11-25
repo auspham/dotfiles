@@ -33,19 +33,19 @@ TEXT
   if [ -n "${1:-}" ]; then printf '\nWhat you know about how your user likes work done:\n%s\n' "$1"; fi
 }
 
-# Where this space keeps its record, and what it says. $1 spaces dir, $2 space id, $3 space name.
+# Where this space keeps its record, and what it says. $1 the space's knowledge dir, $2 space name.
 coordinator_record() {
-  local dir="$1/$2" ledger="$1/$2/ledger.jsonl" live other
+  local dir="$1" ledger="$1/ledger.jsonl" live other
   printf 'Your knowledge dir for this space is %s. notes.md there is yours to keep current; ledger.jsonl is written by hcoord.\n' "$dir"
   if [ -f "$dir/notes.md" ]; then printf 'Your notes so far:\n%s\n' "$(head -c 3000 "$dir/notes.md")"; fi
   if [ -f "$ledger" ]; then
     live=$(ledger_live_children "$ledger")
     [ -z "$live" ] || printf 'The ledger lists children not killed: %s. Run hcoord ls, then hcoord adopt if they are missing.\n' "$live"
   else
-    for other in "$1"/*/ledger.jsonl; do
+    for other in "$(dirname "$dir")"/*/ledger.jsonl; do
       [ -f "$other" ] || continue
-      if [ "$(ledger_space_name "$other")" = "$3" ]; then
-        printf 'Another space dir has a ledger for a space also named "%s": if it is your predecessor, run hcoord adopt --from %s\n' "$3" "$(basename "$(dirname "$other")")"
+      if [ "$(ledger_space_name "$other")" = "$2" ]; then
+        printf 'Another space dir has a ledger for a space also named "%s": if it is your predecessor, run hcoord adopt --from %s\n' "$2" "$(basename "$(dirname "$other")")"
         break
       fi
     done
