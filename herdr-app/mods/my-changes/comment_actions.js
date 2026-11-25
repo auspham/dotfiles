@@ -10,6 +10,9 @@ import { writeMode, barAction, barTitle } from "./comment_bar.js";
 /** editing: the thread's queued comment is in the input, through Edit. */
 /** @typedef {{ mode: "new", anchor: import("./comment_anchor.js").Anchor } | { mode: "thread", id: string, editing?: boolean }} Composer */
 
+/** Fills the input and records whether it holds text. set_value fires no change event, and a stale record would stop typing from redrawing the bar's Queue or Send all button. @param {any} host @param {string} text */
+function setInput(host, text) { host.commentInput.set_value(text); host.hasComment = Boolean(text.trim()); }
+
 /** Opens the bar for a new comment on the selected lines. @param {any} host the Changes view @param {any} cx */
 export function openComposer(host, cx) {
   if (!host.sel || !host.open) return;
@@ -18,11 +21,11 @@ export function openComposer(host, cx) {
   const anchor = span ? makeAnchor(host.rows, span.from, span.to) : null;
   if (!anchor) return;
   host.composer = { mode: "new", anchor };
-  host.commentInput.set_value(""); host.commentInput.focus(); cx.notify();
+  setInput(host, ""); host.commentInput.focus(); cx.notify();
 }
 
 /** @param {any} host @param {any} cx */
-export function closeComposer(host, cx) { host.composer = null; host.commentInput.set_value(""); host.handle.focus(); cx.notify(); }
+export function closeComposer(host, cx) { host.composer = null; setInput(host, ""); host.handle.focus(); cx.notify(); }
 
 /** A click on an inline block: the Comment row opens the bar, a thread opens it for that thread. True when the key was a block's. @param {any} host @param {string} key @param {any} cx */
 export function clickBlock(host, key, cx) {
@@ -30,7 +33,7 @@ export function clickBlock(host, key, cx) {
   if (!hit) return false;
   if (hit === "add") { openComposer(host, cx); return true; }
   host.composer = { mode: "thread", id: hit };
-  host.commentInput.set_value("");
+  setInput(host, "");
   if (writeMode(host.composer, host.comments.find(hit) ?? null)) host.commentInput.focus();
   cx.notify();
   return true;
@@ -39,7 +42,7 @@ export function clickBlock(host, key, cx) {
 /** Puts the thread's queued comment in the input to rewrite it. @param {any} host @param {any} thread @param {any} cx */
 function editQueued(host, thread, cx) {
   host.composer = { mode: "thread", id: thread.id, editing: true };
-  host.commentInput.set_value(lastOf(thread).q); host.commentInput.focus(); cx.notify();
+  setInput(host, lastOf(thread).q); host.commentInput.focus(); cx.notify();
 }
 
 /** Queues what the bar holds: a new thread, a reply, or the thread's rewritten queued comment. @param {any} host @param {any} cx */
