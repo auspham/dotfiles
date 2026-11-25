@@ -72,6 +72,8 @@ calls | grep -q 'Fix the login test' || fail "the task is its first message"
 [ "$(event spawn login-fix | jq -r .worktree)" = "$repo/.agent-worktrees/login-fix" ] || fail "spawn records the worktree"
 
 run spawn login-fix "again" 2>/dev/null && fail "a name cannot be used twice"
+usage=$(run 2>&1 || true)
+grep -q 'hcoord lend' <<<"$usage" && ! grep -q 'set -euo' <<<"$usage" || fail "the usage text lists the commands and stops at the header"
 run spawn "Bad Name" "x" 2>/dev/null && fail "names are checked"
 run spawn other "" 2>/dev/null && fail "a task is required"
 (cd "$root" && env PATH="$bin:$PATH" HC_TERMINAL_ID=t1 "$hcoord" spawn x "task" 2>/dev/null) && fail "it only works inside a repository"
