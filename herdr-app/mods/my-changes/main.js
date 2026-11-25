@@ -169,7 +169,7 @@ export default class Changes extends View {
     this.commentInput.set_auto_grow(2, 8);
     // The bar's Queue button is dim until something is typed, so redraw when the input fills or empties.
     this.commentInput.on("change", (_e, cx) => { const has = Boolean(this.commentInput.value().trim()); if (has !== this.hasComment) { this.hasComment = has; cx.notify(); } });
-    // A textarea reports Enter as a submit too, after adding the newline; only Ctrl+Enter (secondary) queues.
+    // Only Ctrl+Enter (a secondary submit) queues, so plain Enter stays free for new lines in the comment.
     this.commentInput.on("submit", (e, cx) => { if (e?.secondary) submitComposer(this, cx); });
     this.commentInput.on("focus", (_e, cx) => { this.typing = true; cx.notify(); });
     this.commentInput.on("blur", (_e, cx) => { this.typing = false; cx.notify(); });
