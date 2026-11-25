@@ -4,7 +4,7 @@ import { wrapPx, textPx } from "../comment_wrap.js";
 import { threadCard, cardHeight, cardWidth, postHeight, headLabel, ago, PX, FOLD_LINES } from "../comment_card.js";
 import { newThread, patchLast, addReply, setResolved } from "../comment_threads.js";
 import { threadChip, taskNames } from "../comment_status.js";
-import { writeMode, barAction, barTitle, barShows } from "../comment_bar.js";
+import { writeMode, queueLabel, barTitle, queuedText, barShows } from "../comment_bar.js";
 import { splitSources } from "../comment_anchor.js";
 
 const prose = (lines) => lines.map((l) => l.map((sp) => sp.s).join(""));
@@ -80,23 +80,18 @@ assert.deepEqual(threadChip(patchLast([t], t.id, { a: "exit 1" })[0]), { label: 
 assert.deepEqual(threadChip(patchLast([t], t.id, { status: "error", a: "cut off" })[0]), { label: "No answer", tone: "failed" }, "a sent comment whose answer failed is No answer, not Not sent");
 assert.equal(threadChip(patchLast([t], t.id, { status: "held", to: agent })[0]).label, "Waiting for fixer", "a comment held for a busy agent waits for it");
 
-assert.deepEqual(barAction({ typed: true, queued: 2, mode: "new" }), { kind: "queue", label: "Queue comment" }, "typing turns the primary button into Queue comment");
-assert.deepEqual(barAction({ typed: false, queued: 2, mode: "new" }), { kind: "send", label: "Send all (2)" }, "an empty input with comments queued offers Send all");
-assert.equal(barAction({ typed: false, queued: 0, mode: "new" }), null, "nothing typed and nothing queued shows no primary button");
-assert.equal(barAction({ typed: true, queued: 0, mode: "reply" }).label, "Queue reply", "typing under an answered thread queues a reply");
-assert.equal(barAction({ typed: true, queued: 1, mode: "edit" }).label, "Save changes", "typing while editing a queued comment saves it");
-assert.deepEqual(barAction({ typed: true, queued: 1, mode: null }), { kind: "send", label: "Send all (1)" }, "with no input shown the button still sends the queue");
 assert.equal(writeMode(null, null), null, "a closed bar writes nothing");
 assert.equal(writeMode({ mode: "new" }, null), "new", "new lines take a new comment");
 assert.equal(writeMode({ mode: "thread" }, t), null, "a queued comment shows no input until Edit, so a reply never stacks on it");
 assert.equal(writeMode({ mode: "thread", editing: true }, t), "edit", "Edit rewrites the queued comment");
 assert.equal(writeMode({ mode: "thread" }, sent), null, "a thread waiting on its agent takes no reply");
 assert.equal(writeMode({ mode: "thread" }, answered), "reply", "an answered thread takes a reply");
-assert.equal(barTitle(null, "", 3), "3 comments queued, not sent yet", "the bar with no thread says how many are queued");
-assert.equal(barTitle("new", "lines 6-9", 0), "New comment on lines 6-9", "the bar names the lines a new comment is on");
 
 console.log("my-changes comment layout: all checks passed");
 assert.deepEqual(barShows({ mode: "thread", id: "gone" }, null, 2), { editor: false, queue: true }, "keeps the Send all strip when the open thread is gone");
 assert.deepEqual(barShows(null, null, 1), { editor: false, queue: true }, "a queued comment keeps the Send all strip with nothing open");
 assert.deepEqual(barShows({ mode: "new" }, null, 0), { editor: true, queue: false }, "new lines open the editor with nothing queued");
 assert.deepEqual(barShows(null, null, 0), { editor: false, queue: false }, "nothing open and nothing queued shows no bar");
+assert.deepEqual(["new", "reply", "edit", null].map(queueLabel), ["Queue comment", "Queue reply", "Save changes", null], "the editor's button says what it queues, and is absent with no input");
+assert.deepEqual([barTitle("new", "Lines 6-9"), barTitle("reply", "Line 3"), barTitle(null, "Line 3")], ["New comment on Lines 6-9", "Reply on Line 3", "Thread on Line 3"], "the editor's title names the lines and what is being written");
+assert.deepEqual([queuedText(1), queuedText(2)], ["1 comment queued", "2 comments queued"], "the Send all strip counts the queue");

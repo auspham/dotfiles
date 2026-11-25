@@ -50,9 +50,9 @@ const footView = (t, text, resolvable) => h_flex().h(PX.foot).flex_none().px(PX.
   .child(div().flex_1().min_w(0).h(30).px(10).flex().items_center().rounded(6).border_1().border_color(t.border).bg(t.background).text_color(t.muted).truncate().child(text))
   .when(resolvable, (e) => e.child(div().flex_none().text_size(12).text_color(t.muted).child("Resolve")));
 
-/** A thread card, or its one-line marker, filling the box it is given. @param {Card | { marker: string }} c @param {object} t theme @param {{ now: number, mono: string }} env */
-export function cardView(c, t, { now, mono }) {
-  const box = v_flex().size_full().rounded(6).border_1().border_color(t.border).bg(t.raised).overflow_hidden().font_family(SANS).text_size(PROSE_PX).text_color(t.foreground);
+/** A thread card, or its one-line marker, filling the box it is given. @param {Card | { marker: string }} c @param {object} t theme @param {{ now: number, mono: string, open: boolean }} env open: the bar is on this thread */
+export function cardView(c, t, { now, mono, open }) {
+  const box = v_flex().size_full().rounded(6).border_1().border_color(open ? t.accent : t.border).bg(t.raised).overflow_hidden().font_family(SANS).text_size(PROSE_PX).text_color(t.foreground);
   if ("marker" in c) return box.child(div().h(PX.marker).px(PX.padX).flex().items_center().text_size(12).text_color(t.muted).truncate().child(c.marker));
   return box
     .child(h_flex().h(PX.head).flex_none().px(PX.padX).gap(8).items_center().border_b_1().border_color(t.border)

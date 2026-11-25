@@ -54,14 +54,14 @@ export function commentLayout(host, splitting) {
   if (host.commentKey === key) return host.commentCache;
   const { out, marked } = blocks(host, splitting, { cardW, names });
   const { items, heights } = layoutItems(splitting ? host.split.length : host.rows.length, splitting ? host.heights : LINE_H, out);
-  host.commentKey = key; host.commentCache = { items, heights, marked, width, cardW };
+  host.commentKey = key; host.commentCache = { items, heights, marked, width, cardW, open: openId(host) };
   return host.commentCache;
 }
 
-/** One block's slot in the list: a thread card or the Comment row, placed under the code text. The list's on_item_click handles its clicks. @param {CardBlock} b @param {object} t theme @param {{ width: number, cardW: number }} lay */
-export function blockView(b, t, { width, cardW }) {
+/** One block's slot in the list: a thread card or the Comment row, placed under the code text. The list's on_item_click handles its clicks. @param {CardBlock} b @param {object} t theme @param {{ width: number, cardW: number, open: string | null }} lay */
+export function blockView(b, t, { width, cardW, open }) {
   const slot = div().w(width).h(b.h).flex_none().pl(LEFT).py(PX.margin).cursor_pointer();
   const inner = div().w(cardW).h(b.h - 2 * PX.margin);
   if (!b.card) return slot.child(inner.child(addView(t)));
-  return slot.child(inner.child(cardView(b.card, t, { now: Date.now(), mono: String(settings().font_family ?? "JetBrains Mono") })));
+  return slot.child(inner.child(cardView(b.card, t, { now: Date.now(), mono: String(settings().font_family ?? "JetBrains Mono"), open: b.thread?.id === open })));
 }

@@ -1,5 +1,5 @@
 import { View, div, svg } from "gpui-kit";
-import { v_flex, h_flex, InputState, Input, Scrollbar, v_virtual_list, TextView, ScrollHandle } from "gpui-base";
+import { v_flex, h_flex, InputState, TextareaState, Input, Scrollbar, v_virtual_list, TextView, ScrollHandle } from "gpui-base";
 import { spaces, panes, focused, terminals, exec, readTextFile, watchFolder, theme, settings, nextCommand, layout, run, shared, setShared, home, openOverlay, closeOverlay, props } from "herdr";
 import { langFor, highlightRows, hashLines, wrapTokens } from "./highlight.js";
 import { coordinatorNote } from "./coordinator.js";
@@ -12,7 +12,8 @@ import { CommentStore } from "./comment_store.js";
 import { sender, pollReplies } from "./comment_send.js";
 import { listening } from "./comment_replies.js";
 import { commentLayout, blockView } from "./comment_view.js";
-import { openComposer, closeComposer, clickBlock, submitComposer, composerBar } from "./comment_actions.js";
+import { openComposer, closeComposer, clickBlock, submitComposer } from "./comment_actions.js";
+import { composerBar } from "./comment_bar_view.js";
 
 let lastLocation = null;
 function location() {
@@ -164,10 +165,12 @@ export default class Changes extends View {
     this.listH = Number(this.read("listH")) || 0; this.listSeen = 200; this.panelH = 800; this.ldrag = null; // listH 0: as tall as its rows
     // The review pane copy draws what the side panel publishes, taken in by a timer since render must not change state; it reads no git state of its own.
     this.comments = new CommentStore(isReviewPane()); this.sendDrafts = sender(this, this.comments); this.composer = null;
-    this.commentInput = InputState.new({ placeholder: "Write a comment; Enter queues it" });
-    // The bar's primary button turns from Send all to Queue as typing starts, so redraw when the input fills or empties.
+    this.commentInput = TextareaState.new({ placeholder: "Leave a comment. Ctrl+Enter queues it" });
+    this.commentInput.set_auto_grow(2, 8);
+    // The bar's Queue button is dim until something is typed, so redraw when the input fills or empties.
     this.commentInput.on("change", (_e, cx) => { const has = Boolean(this.commentInput.value().trim()); if (has !== this.hasComment) { this.hasComment = has; cx.notify(); } });
-    this.commentInput.on("submit", (_e, cx) => submitComposer(this, cx));
+    // A textarea reports Enter as a submit too, after adding the newline; only Ctrl+Enter (secondary) queues.
+    this.commentInput.on("submit", (e, cx) => { if (e?.secondary) submitComposer(this, cx); });
     this.commentInput.on("focus", (_e, cx) => { this.typing = true; cx.notify(); });
     this.commentInput.on("blur", (_e, cx) => { this.typing = false; cx.notify(); });
     if (isReviewPane()) { cx.timer.every(250, (cx) => { syncPane(this, key(), cx); if (this.comments.mirrorFrom(paneThreads(this.root, this.open))) cx.notify(); }); return; }
@@ -1041,7 +1044,8 @@ export default class Changes extends View {
     const lay = commentLayout(this, splitting);
     const draw = (it) => ("block" in it ? blockView(it.block, t, lay)
       : splitting ? this.splitRow(this.split[it.row], t, this.isSel(it.row), lay.marked.has(it.row)) : this.diffRow(this.rows[it.row], t, this.isSel(it.row), lay.marked.has(it.row)));
-    return div().flex_1().min_h(0).relative().font_family(settings().font_family ?? "JetBrains Mono").text_size(11)
+    // The comment bar sits under the diff, not over it, so it never covers the last rows.
+    return v_flex().flex_1().min_h(0).child(div().flex_1().min_h(0).relative().font_family(settings().font_family ?? "JetBrains Mono").text_size(11)
       .on_mouse_down("left", (ev) => { this.shift = Boolean(ev.modifiers?.shift); })
       .on_size_change((size, cx) => { if (Math.abs(size.width - this.diffW) > 1) { this.diffW = size.width; cx.notify(); } })
       .child(div().id("changes-diff-x").size_full().overflow_x_scrollbar()
@@ -1059,7 +1063,7 @@ export default class Changes extends View {
       .when(splitting && this.drag, (e) => e.child(div().id("split-drag").absolute().inset_0().cursor_col_resize()
         .on_mouse_move((ev, cx) => { this.ratio = clamp(ev.local_position.x / Math.max(1, this.diffW), 0.15, 0.85); cx.notify(); })
         .on_mouse_up("left", (_ev, cx) => { this.drag = false; this.write("ratio", String(this.ratio)); cx.notify(); })))
-      .when(!this.open && this.files.length > 0, (e) => e.child(div().absolute().top(6).px(12).text_color(t.dim).child("Select a file to view its changes")))
+      .when(!this.open && this.files.length > 0, (e) => e.child(div().absolute().top(6).px(12).text_color(t.dim).child("Select a file to view its changes"))))
       .children([composerBar(this, t)].filter(Boolean));
   }
 
