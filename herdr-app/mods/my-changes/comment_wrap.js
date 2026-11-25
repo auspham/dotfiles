@@ -1,22 +1,15 @@
-// Wraps comment text to a width in px, keeping `code` spans apart so they can be drawn monospace. Pure: no herdr imports, so node can test it.
+// Wraps comment text to a width in px, keeping `code` spans apart so they draw on a tinted background. Pure: no herdr imports, so node can test it.
 
 /** @typedef {{ s: string, code: boolean }} Span */
 /** @typedef {Span[]} TextLine */
 
-export const PROSE_PX = 13, CODE_PX = 12;
-// Widths in em for the prose font (Inter), each rounded up. There is no text measuring call, and a guess that is too narrow clips text, so they err wide.
-const EM = [["ijlI.,:;'|!", 0.3], [" frt\"-/*", 0.42], ["()[]{}", 0.47], ["mwM@%", 0.95], ["W", 1.04], ["ABCDEFGHJKLNOPQRSTUVXYZ&", 0.76], ["0123456789", 0.68]];
-const CODE_W = 0.62 * CODE_PX;
+import { ADVANCE_EM, BODY_PX } from "./comment_font.js";
 
-/** The px one character takes. @param {string} ch @param {boolean} code */
-function charPx(ch, code) {
-  if (code) return CODE_W;
-  const hit = EM.find(([set]) => set.includes(ch));
-  return (hit ? hit[1] : 0.62) * PROSE_PX;
-}
+// Glyphs past Latin-1 (CJK, emoji, symbols) fall back to another font that may draw them twice as wide; counting two cells errs wide, which only costs slack.
+const cells = (ch) => ((ch.codePointAt(0) ?? 0) > 0xff ? 2 : 1);
 
-/** Estimated px width of a run of text. @param {string} s @param {boolean} code */
-export const textPx = (s, code) => [...s].reduce((w, ch) => w + charPx(ch, code), 0);
+/** Estimated px width of a run of text in the comment font. @param {string} s @param {number} [size] font px */
+export const textPx = (s, size = BODY_PX) => [...s].reduce((w, ch) => w + cells(ch), 0) * ADVANCE_EM * size;
 
 /** A paragraph's words, each knowing whether it is inside backticks; an unclosed backtick stays literal. @param {string} para @returns {Span[]} */
 function words(para) {
@@ -31,7 +24,7 @@ function breakWord(w, width) {
   const out = [];
   let piece = "";
   for (const ch of w.s) {
-    if (piece && textPx(piece + ch, w.code) > width) { out.push({ s: piece, code: w.code }); piece = ""; }
+    if (piece && textPx(piece + ch) > width) { out.push({ s: piece, code: w.code }); piece = ""; }
     piece += ch;
   }
   return [...out, { s: piece, code: w.code }];
@@ -48,13 +41,13 @@ function append(line, w) {
 }
 
 /** @param {TextLine} line */
-const linePx = (line) => line.reduce((w, sp) => w + textPx(sp.s, sp.code), 0);
+const linePx = (line) => line.reduce((w, sp) => w + textPx(sp.s), 0);
 
 /** Word-wraps one paragraph. @param {string} para @param {number} width */
 function wrapPara(para, width) {
   const out = [];
   let line = [];
-  for (const w of words(para).flatMap((w) => (textPx(w.s, w.code) > width ? breakWord(w, width) : [w]))) {
+  for (const w of words(para).flatMap((w) => (textPx(w.s) > width ? breakWord(w, width) : [w]))) {
     const next = append(line, w);
     if (line.length && linePx(next) > width) { out.push(line); line = [{ ...w }]; } else line = next;
   }

@@ -1,7 +1,7 @@
 // Lays out comment threads among the diff's rows with their heights, and draws each one's slot in the list.
 
 import { div } from "gpui-kit";
-import { terminals, settings } from "herdr";
+import { terminals } from "herdr";
 import { layoutItems, placeThreads } from "./comment_layout.js";
 import { threadCard, cardHeight, cardWidth, PX } from "./comment_card.js";
 import { cardView, addView } from "./comment_card_view.js";
@@ -63,5 +63,5 @@ export function blockView(b, t, { width, cardW, open }) {
   const slot = div().w(width).h(b.h).flex_none().pl(LEFT).py(PX.margin).cursor_pointer();
   const inner = div().w(cardW).h(b.h - 2 * PX.margin);
   if (!b.card) return slot.child(inner.child(addView(t)));
-  return slot.child(inner.child(cardView(b.card, t, { now: Date.now(), mono: String(settings().font_family ?? "JetBrains Mono"), open: b.thread?.id === open })));
+  return slot.child(inner.child(cardView(b.card, t, { now: Date.now(), open: b.thread?.id === open })));
 }

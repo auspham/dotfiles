@@ -13,10 +13,11 @@ assert.ok(wrapPx("x".repeat(200), 100).length > 1, "breaks a word wider than the
 assert.deepEqual(prose(wrapPx("a\n\nb", 200)), ["a", "", "b"], "keeps the answer's blank lines");
 assert.deepEqual(wrapPx("use `greet()` here", 400)[0], [{ s: "use ", code: false }, { s: "greet()", code: true }, { s: " here", code: false }], "keeps backtick spans apart so they draw in the code font");
 assert.deepEqual(wrapPx("a ` b", 400)[0], [{ s: "a ` b", code: false }], "an unclosed backtick stays literal text");
-assert.ok(textPx("WWWW", false) > textPx("iiii", false) * 2, "wide letters count wider than narrow ones");
-// Widths Inter Regular draws at 13px, measured with FreeType.
-const INTER = {"WWWW MMMM": 102.8, "0123456789": 76.9, "/home/austin/projects/a/file.js": 184.2, "Yes. Line 2 isn't gone: it's now import { greet, farewell }": 339.3, "THE QUICK BROWN FOX": 153.6};
-for (const [s, px] of Object.entries(INTER)) assert.ok(textPx(s, false) >= px, `estimates "${s}" at least as wide as Inter draws it`);
+assert.equal(textPx("WWWW"), textPx("iiii"), "every character takes one advance in the monospace comment font");
+assert.equal(textPx("界"), 2 * textPx("a"), "a glyph past Latin-1 counts two cells, since its fallback font may draw it wide");
+// Fira Code at 13px in a screenshot of a farewell answer: this 74-character line's ink spans 589px over 73 advances, so one advance is at most 589 / 73 px.
+const SHOT = "that farewell(\"Ada\") returns \"Goodbye, Ada!\", so node greet_test.mjs fails";
+assert.ok(textPx(SHOT) / 74 >= 589 / 73 && textPx(SHOT) / 74 < 8.3, "estimates a line at least as wide as Fira Code draws it, and not much wider");
 
 const anchor = { lines: [{ side: "new", n: 3, text: "let x = 2" }], before: [], after: [] };
 const t = newThread({ id: "cabc123", path: "a.js", anchor, q: "Why is this two?", now: 1 });

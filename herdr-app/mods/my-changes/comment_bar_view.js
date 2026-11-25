@@ -5,6 +5,7 @@ import { h_flex, v_flex, Textarea } from "gpui-base";
 import { isDraft } from "./comment_threads.js";
 import { headLabel } from "./comment_card.js";
 import { SANS } from "./comment_card_view.js";
+import { COMMENT_FONT, BODY_PX } from "./comment_font.js";
 import { writeMode, queueLabel, barTitle, queuedText, barShows } from "./comment_bar.js";
 import { closeComposer, submitComposer, sendDrafts, editQueued, act, barThread } from "./comment_actions.js";
 
@@ -37,7 +38,7 @@ function editor(host, t, thread) {
     .child(h_flex().gap(8).items_center().child(div().flex_1().min_w(0).truncate().font_semibold().child(barTitle(mode, where)))
       .child(textButton(t, { id: "cm-close", label: "Close (Esc)", click: (_e, cx) => closeComposer(host, cx) }).text_size(12)))
     .when(Boolean(mode), (e) => e.child(div().px(10).py(6).rounded(6).border_1().border_color(host.typing ? t.accent : t.border).bg(t.background)
-      .child(Textarea.new(host.commentInput).w_full().text_size(13).text_color(t.foreground))))
+      .child(Textarea.new(host.commentInput).w_full().font_family(COMMENT_FONT).text_size(BODY_PX).text_color(t.foreground))))
     .child(h_flex().gap(2).items_center().flex_wrap().children(thread ? threadButtons(host, t, thread) : []).child(div().flex_1())
       .when(Boolean(label), (e) => e.child(primary(t, { id: "cm-queue", label: label ?? "", dim: !host.hasComment, click: (_e, cx) => submitComposer(host, cx) }))));
 }
