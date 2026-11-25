@@ -131,8 +131,8 @@ export default class Team extends View {
   }
 
   feedSection(t) {
-    // The coordinator reads "Coordinator": its tab name is whatever it happens to be working on.
-    const labels = new Map(this.cards.map((c) => [c.name, c.role === "coordinator" ? "Coordinator" : c.label]));
+    // A coordinator reads by its session name: its tab name is whatever it happens to be working on.
+    const labels = new Map(this.cards.map((c) => [c.name, c.role === "coordinator" ? `Coordinator ${c.name}` : c.label]));
     const who = (name) => labels.get(name) ?? name;
     const feed = messageFeed([...this.tails.values()]).map((m) => ({ ...m, to: resolveTarget(m.to, this.sessions) }));
     return messagesSection(t, { ...this.messages, feed, chatty: chattyPairs(feed, Date.now()), who }, {

@@ -36,8 +36,8 @@ export function coordinatorControls(t, settings, menu, { onToggle, onModel, onEf
   return v_flex().flex_none().gap(7).p(10).border_b(1).border_color(t.border)
     .child(toggle(t, settings.enabled, onToggle))
     .child(div().text_size(11).text_color(t.dim).child(settings.enabled
-      ? "One agent here leads: it launches child agents in their own tabs and reviews them."
-      : "Off: agents here work on their own. Switch on to have one agent coordinate the rest."))
+      ? "Every agent you start here is a coordinator: each launches its own child agents in their own tabs and reviews them."
+      : "Off: agents here work on their own. Switch on to make every agent here a coordinator of its own children."))
     // Side by side while they fit, the second one drops to its own line when the panel is too narrow.
     .when(settings.enabled, (e) => {
       const pickers = [

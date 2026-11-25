@@ -1,4 +1,4 @@
-// The small marks on a team card: who is the coordinator and where a child's review stands.
+// The small marks on a team card: which agents are coordinators, whether a child is lent, and where a child's review stands.
 
 import { div, svg } from "gpui-kit";
 
@@ -13,10 +13,10 @@ export const coordinatorBadge = (t) => chip("Coordinator", t.working);
 
 /** A child's review state; the note is its tooltip. */
 export function reviewChip(t, card) {
-  if (card.review === "yours") return chip("Your turn", t.blocked).tooltip(card.reviewNote || "The coordinator approved this and handed the review to you");
+  if (card.review === "yours") return chip("Your turn", t.blocked).tooltip(card.reviewNote || "Its coordinator approved this and handed the review to you");
   if (card.review === "reviewed") return chip("Reviewed by you", t.done).tooltip(card.reviewNote || "You finished reviewing this");
   if (card.review === "reviewing") {
-    return chip("Reviewing", t.working, svg("mods/workspace-chrome/spinner.svg").size(10).flex_none().text_color(t.working).spin(900)).tooltip(card.reviewNote || "The coordinator is reading the diff");
+    return chip("Reviewing", t.working, svg("mods/workspace-chrome/spinner.svg").size(10).flex_none().text_color(t.working).spin(900)).tooltip(card.reviewNote || "Its coordinator is reading the diff");
   }
   const [text, tone] = REVIEW[card.review] ?? REVIEW.pending;
   return chip(text, t[tone] ?? t.dim).tooltip(card.reviewNote || text);
