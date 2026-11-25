@@ -76,6 +76,7 @@ assert.equal(threadsKey("A"), "review.threads.A", "each tab has its own threads 
 assert.deepEqual(parseShared({ root: "/r", path: "src/a.js", threads: [t0], drafts: 3 }, "/r", "src/a.js"), { threads: [t0], drafts: 3 }, "the pane takes threads for the file it shows and the draft count for every file");
 assert.equal(parseShared({ root: "/r", path: "src/a.js", threads: [], drafts: -1 }, "/r", "src/a.js").drafts, 0, "a bad draft count reads as none");
 assert.equal(parseShared({ root: "/r", path: "b.js", threads: [t0] }, "/r", "src/a.js"), null, "the pane ignores threads for another file");
+assert.equal(parseShared({ root: "/r", path: "src/a.js", threads: [{ ...t0, exchanges: [{ ...t0.exchanges[0], status: "draft" }] }] }, "/r", "src/a.js").drafts, 1, "counts the queued threads a published record carries when its draft count is missing");
 const now = 100000, req = { op: "add", root: "/r", path: "src/a.js", anchor, text: "hi", ts: now - 5 };
 assert.deepEqual(requestToApply(req, null, "/r", now), { request: req, seen: req.ts }, "applies a fresh comment from the pane");
 assert.equal(requestToApply(req, req.ts, "/r", now).request, null, "applies each request once");

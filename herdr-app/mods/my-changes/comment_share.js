@@ -1,6 +1,7 @@
 // How the review pane sees the side panel's comment threads and asks it to change them. The side panel owns the threads; the pane only draws them and sends requests. Pure: no herdr imports, so node can test it.
 
 import { parseThreads } from "./comment_threads.js";
+import { draftsOf } from "./comment_batch.js";
 import { parseAnchor } from "./comment_anchor.js";
 import { TOGGLE_TTL_MS } from "./review_pane.js";
 
@@ -20,8 +21,9 @@ export const threadsKey = (tab) => `review.threads.${tab}`;
 export function parseShared(v, root, path) {
   const s = /** @type {any} */ (v);
   if (!s || typeof s !== "object" || s.root !== root || s.path !== path) return null;
-  const drafts = Number.isInteger(s.drafts) && s.drafts >= 0 ? s.drafts : 0;
-  return { threads: parseThreads(s.threads).filter((t) => t.path === path), drafts };
+  const threads = parseThreads(s.threads).filter((t) => t.path === path), published = Number.isInteger(s.drafts) && s.drafts >= 0 ? s.drafts : 0;
+  // A record written before it carried a count, or not rewritten since, must not hide Send all under a Queued card.
+  return { threads, drafts: Math.max(published, draftsOf(threads).length) };
 }
 
 const isText = (v) => typeof v === "string" && v.length > 0;
