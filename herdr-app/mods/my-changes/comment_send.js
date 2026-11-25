@@ -39,7 +39,8 @@ async function toAgent({ store, key, ids, on }, to, cx) {
   const threads = stillThere(store.threadsAt(key), ids);
   if (!threads.length) return true;
   const failed = action === "send" ? await sendBatch(threads, to, on) : `Not sent: ${to.name} stayed busy with a question for too long.`;
-  store.update(key, (ts) => patchMany(ts, ids, failed ? { status: "error", a: failed } : { status: "sent" }));
+  // A failed batch goes back to drafts with its reason, so Send, or Done reviewing, can try it again.
+  store.update(key, (ts) => patchMany(ts, ids, failed ? { status: "draft", to: null, a: failed } : { status: "sent" }));
   return !failed;
 }
 
@@ -65,13 +66,13 @@ export function sender(host, store) {
     const finish = (cx) => { host.publishComments(); cx.notify(); };
     if (target.kind === "claude") {
       const ask = { root: host.root, on: host.on, model: host.modelId, effort: host.effortId };
-      store.update(key, (ts) => patchMany(ts, ids, { status: "pending" }));
+      store.update(key, (ts) => patchMany(ts, ids, { status: "pending", a: "" }));
       for (const id of ids) cx.spawn(async (cx) => { await toClaude(host, { store, key, id, ask }, target.session); finish(cx); });
       return { toChild: 0, held: false, done: Promise.resolve(true) };
     }
     const to = { address: target.address, name: target.name }, held = deliveryAction(statusOf(to.address), 0) === "wait";
     // Marked at once, so a second click finds no drafts and cannot send them twice.
-    store.update(key, (ts) => patchMany(ts, ids, { status: held ? "held" : "sent", to }));
+    store.update(key, (ts) => patchMany(ts, ids, { status: held ? "held" : "sent", to, a: "" }));
     const done = new Promise((resolve) => cx.spawn(async (cx) => { const ok = await toAgent({ store, key, ids, on: host.on ?? null }, to, cx); finish(cx); resolve(ok); }));
     return { toChild: ids.length, held, done };
   };

@@ -64,7 +64,7 @@ export class CommentStore {
 
   /** Sends every draft as one batch. From the pane, a request to the panel, which owns the threads. @param {{ root: string, path: string }} where @param {Send} send @param {any} cx */
   send({ root, path }, send, cx) {
-    if (this.mirror) { setShared(COMMENT_KEY, { op: "send", root, path, text: "", ts: Date.now() }); return null; }
+    if (this.mirror) { if (path) setShared(COMMENT_KEY, { op: "send", root, path, text: "", ts: Date.now() }); return null; }
     return send(cx);
   }
 

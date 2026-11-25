@@ -24,6 +24,8 @@ const settled = settleAfterReload([patchLast([t0], t0.id, { status: "pending" })
 assert.equal(lastOf(settled[0]).status, "error", "a claude answer cut off by a reload shows as an error");
 assert.equal(lastOf(settled[1]).status, "sent", "a comment already sent to an agent still waits for its reply after a reload");
 assert.equal(lastOf(settled[2]).status, "draft", "a draft stays unsent after a reload");
+const heldBack = settleAfterReload(patchLast([t0], t0.id, { status: "held", to: agent }))[0];
+assert.deepEqual([lastOf(heldBack).status, lastOf(heldBack).to], ["draft", null], "a comment held for a busy agent goes back to a draft after a reload, to send again");
 assert.equal(parseThreads(JSON.parse(JSON.stringify([t0])))[0].exchanges[0].status, "draft", "a draft survives being stored and read back");
 
 assert.equal(lastOf(editDraft([t0], t0.id, "Why not 3?")[0]).q, "Why not 3?", "a draft can be edited before it is sent");

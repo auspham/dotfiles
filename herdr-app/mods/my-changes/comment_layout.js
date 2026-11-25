@@ -38,7 +38,7 @@ function wrapped(text, cols, tone, max = Infinity) {
 
 /** @param {import("./comment_threads.js").Exchange} e @returns {[string, Tone]} */
 function answerOf(e) {
-  if (e.status === "draft") return ["Draft: not sent until you click Send", "hint"];
+  if (e.status === "draft") return e.a ? [`${e.a} Still a draft; Send tries again.`, "error"] : ["Draft: not sent until you click Send", "hint"];
   if (e.status === "held") return [`Waiting for ${e.to?.name ?? "the agent"} to be free…`, "wait"];
   if (e.status === "sent") return [`Sent to ${e.to?.name ?? "the agent"}`, "wait"];
   if (e.status === "pending") return ["Thinking…", "wait"];

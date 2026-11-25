@@ -58,8 +58,9 @@ function act(host, op, id, cx) {
 
 /** Sends every draft as one batch; from the review pane, through the side panel. @param {any} host @param {any} cx */
 export function sendDrafts(host, cx) {
-  if (!host.root || !host.open) return null;
-  const batch = host.comments.send({ root: host.root, path: host.open }, host.sendDrafts, cx);
+  if (!host.root) return null;
+  // Drafts outlive a reload, so the panel sends them with no file open; only the pane's request names one.
+  const batch = host.comments.send({ root: host.root, path: host.open ?? "" }, host.sendDrafts, cx);
   host.publishComments(); cx.notify();
   return batch;
 }

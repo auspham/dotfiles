@@ -63,10 +63,13 @@ export const isDraft = (t) => lastOf(t).status === "draft";
 /** Whether the thread still waits on an answer. @param {Thread} t */
 export const waiting = (t) => ["held", "sent", "pending"].includes(lastOf(t).status);
 
-/** After a reload no task is left to finish a claude -p call or a held delivery, so those end as errors; a message already sent may still get its hreview reply. @param {Thread[]} threads */
+/** After a reload no task is left to finish a claude -p call or a held delivery. A cut-off answer ends as an error; a held comment was never typed, so it goes back to a draft to send again. A message already sent may still get its hreview reply. @param {Thread[]} threads */
 export function settleAfterReload(threads) {
-  const why = { pending: "Interrupted: the panel reloaded before the answer arrived.", held: "Not sent: the panel reloaded while the agent was busy." };
-  return threads.map((t) => (why[lastOf(t).status] ? patchLast([t], t.id, { status: "error", a: why[lastOf(t).status] })[0] : t));
+  const settle = {
+    pending: { status: "error", a: "Interrupted: the panel reloaded before the answer arrived." },
+    held: { status: "draft", to: null, a: "Not sent: the panel reloaded while the agent was busy." },
+  };
+  return threads.map((t) => (settle[lastOf(t).status] ? patchLast([t], t.id, settle[lastOf(t).status])[0] : t));
 }
 
 const isText = (v, max) => typeof v === "string" && v.length <= max;
