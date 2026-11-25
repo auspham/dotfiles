@@ -2,7 +2,7 @@
 # hcoord: how a coordinator agent launches, watches and stops its child agents in herdr.
 # Each child gets its own tab and its own git worktree, so parallel work never clashes.
 #   hcoord spawn <name> "<task>" [--model M] [--effort E] [--repo DIR] [--base BRANCH]   (model and effort: the Team panel's choice unless given)
-#   hcoord ls [--json]          hcoord diff <name> [--stat]   (diff works on any child in the space)
+#   hcoord ls [--all] [--json]  hcoord diff <name> [--stat]   (ls lists your own children, --all every child in the space with its coord; diff works on any)
 #   hcoord review <name> approved|changes|pending|reviewing|yours [note]
 #   hcoord handoff <name> [--summary TEXT]   (stdin: one "high|normal|skim<TAB>path<TAB>reason" per file; hands the committed work to the user)
 #   hcoord kill <name> [--worktree] [--force]
@@ -86,15 +86,18 @@ fork_point() { git -C "$1" merge-base HEAD "$2" 2>/dev/null || echo "$2"; }
 shortstat() { git -C "$1" diff --shortstat "$(fork_point "$1" "$2")" 2>/dev/null | sed 's/^ *//'; }
 
 cmd_ls() {
-  local t info rows=()
-  for t in $(children); do
+  local every=false json=false arg t info rows=() list
+  for arg in "$@"; do case "$arg" in --all) every=true ;; --json) json=true ;; *) die "unknown option $arg" ;; esac; done
+  if $every; then list=$(hc ls --json --label role=child --label "herdr.space=$(label_of "$me" herdr.space)" | jq -r '.terminals[].address'); else list=$(children); fi
+  for t in $list; do
     info=$(hc get "$t" --json)
     rows+=("$(jq -c --arg stat "$(shortstat "$(jq -r '.labels.worktree' <<<"$info")" "$(jq -r '.labels.base' <<<"$info")")" \
-      '{name: .labels.task, terminal: .address, status: (.status.state // "unknown"), review: (.labels.review // "pending"), branch: .labels.branch, diff: $stat}' <<<"$info")")
+      '{name: .labels.task, terminal: .address, coord: .labels.coord, owner: (.labels.owner // ""), status: (.status.state // "unknown"), review: (.labels.review // "pending"), branch: .labels.branch, diff: $stat}' <<<"$info")")
   done
   local all; all=$(printf '%s\n' ${rows[@]+"${rows[@]}"} | jq -s 'map(select(. != null))')
-  if [ "${1:-}" = --json ]; then echo "$all"; return; fi
-  jq -r '.[] | "\(.name)\t\(.terminal)\t\(.status)\t\(.review)\t\(.diff)"' <<<"$all" | column -t -s $'\t'
+  if $json; then echo "$all"; return; fi
+  # The owner shares the coord cell, since an often-empty column would shift the table.
+  jq -r --argjson every "$every" '.[] | [.name, .terminal] + (if $every then [.coord + (if .owner == "" then "" else " (lent by \(.owner))" end)] else [] end) + [.status, .review, .diff] | join("\t")' <<<"$all" | column -t -s $'\t'
 }
 
 cmd_diff() {

@@ -230,5 +230,9 @@ calls | grep -q 'hc kill' && fail "a refused kill stops nothing"
 echo peek > "$repo/.agent-worktrees/mine/peek.txt"; git -C "$repo/.agent-worktrees/mine" add peek.txt
 TEST_ME=c2 run diff mine | grep -q '^+peek' || fail "diff works on any child in the space"
 TEST_ME=c2 run ls | grep -q '^mine ' && fail "plain ls lists only the caller's own children"
+every=$(TEST_ME=c2 run ls --all)
+grep -q "^mine  *$mine_t  *c1  *working  *pending" <<<"$every" && grep -q '^theirs .* c2 ' <<<"$every" || { echo "$every" >&2; fail "ls --all lists every child in the space with its coord"; }
+grep -q '^heir ' <<<"$every" && fail "ls --all stays inside the caller's space"
+[ "$(TEST_ME=c2 run ls --all --json | jq -r 'map(.name + "=" + .coord) | sort | join(" ")')" = "mine=c1 theirs=c2" ] || fail "ls --all --json gives each child's coord"
 
 echo "hcoord: all checks passed"
