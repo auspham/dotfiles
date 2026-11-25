@@ -2,7 +2,8 @@
 
 import { div } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
-import { readTextFile, terminals, focused, exec, run, notify } from "herdr";
+import { readTextFile, terminals, exec, run, notify } from "herdr";
+import { followedTerminal } from "./review_link.js";
 import { guidePath, parseGuide, headMoved, guideEntry, guideStats, canFinish, notifyTarget, shouldFinish, finishOutcome, deliveryAction, undeliveredToast, RETRY_MS } from "./guide.js";
 
 /** The guide in force for the Changes root, re-read when its file changes. */
@@ -11,7 +12,7 @@ export class GuideSource {
 
   /** Loads the guide the focused terminal's labels name; true the first time one loads for this root. @param {string} root @param {string} head @param {string | null} on @returns {Promise<boolean>} */
   async sync(root, head, on) {
-    const term = terminals().find((x) => x.address === focused()?.terminal), cwd = term?.foreground?.cwd ?? term?.cwd ?? "";
+    const term = terminals().find((x) => x.address === followedTerminal()), cwd = term?.foreground?.cwd ?? term?.cwd ?? "";
     const path = cwd === root || cwd.startsWith(`${root}/`) ? guidePath(term?.labels) : null;
     this.head = head; this.address = path ? term.address : null;
     if (!path) { this.source = null; this.guide = null; return false; }

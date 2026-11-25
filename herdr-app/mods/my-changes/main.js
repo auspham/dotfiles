@@ -5,8 +5,8 @@ import { langFor, highlightRows, hashLines, wrapTokens } from "./highlight.js";
 import { coordinatorNote } from "./coordinator.js";
 import { GuideSource } from "./guide_view.js";
 import { LEVELS, LEVEL_LABEL, VERDICT_SCHEMA, pathFlags, diffFlags, isTest, isCode, testsChangedCode, levelOf, splitDiff, triagePrompt } from "./triage.js";
-import { followedLocation } from "./review_pane.js";
-import { isReviewPane, paneLocation, paneShown, openReviewPane, publishReview, requestToggle, takeToggle } from "./review_link.js";
+import { followFocus } from "./review_pane.js";
+import { isReviewPane, followedTerminal, paneLocation, paneShown, openReviewPane, publishReview, requestToggle, takeToggle } from "./review_link.js";
 import { paneView } from "./review_pane_view.js";
 
 let lastLocation = null;
@@ -15,7 +15,7 @@ function location() {
   const space = spaces().find((s) => s.active), f = focused();
   const pane = f?.pane ? panes().find(p => p.pane === f.pane) : null;
   const on = f?.pane === null ? (f.terminal?.includes("/") ? f.terminal.split("/")[0] : null) : space?.machine ?? null;
-  lastLocation = followedLocation(pane, { cwd: pane?.cwd || f?.cwd || space?.folder, on }, lastLocation);
+  lastLocation = followFocus(pane, { cwd: pane?.cwd || f?.cwd || space?.folder, on }, lastLocation);
   return lastLocation;
 }
 const key = () => JSON.stringify(location());
@@ -1081,7 +1081,7 @@ export default class Changes extends View {
         .when(this.listH > 0, (e) => e.flex_none().h(clamp(this.listH, 44, Math.max(44, this.panelH - 200))))
         .when(!this.listH, (e) => e.flex_1().max_h(listFit))
         .on_size_change((size, cx) => { if (Math.abs(size.height - this.listSeen) > 1) { this.listSeen = size.height; cx.notify(); } })
-        .child(v_flex().id("changes-list").absolute().inset_0().overflow_y_scroll().p(6).children(listRows.map((row) => this.listRow(row, t))).when(!this.files.length, (e) => e.child(coordinatorNote(t, terminals(), focused()?.terminal) ?? div().p(8).text_color(t.dim).child(this.error || (this.loading ? "Loading changes…" : this.root ? (this.range === "work" ? "No uncommitted changes" : "No changes") : "No folder")))))
+        .child(v_flex().id("changes-list").absolute().inset_0().overflow_y_scroll().p(6).children(listRows.map((row) => this.listRow(row, t))).when(!this.files.length, (e) => e.child(coordinatorNote(t, terminals(), followedTerminal()) ?? div().p(8).text_color(t.dim).child(this.error || (this.loading ? "Loading changes…" : this.root ? (this.range === "work" ? "No uncommitted changes" : "No changes") : "No folder")))))
         .child(Scrollbar.vertical("changes-list").absolute().inset_0()))
       .child(div().id("list-handle").w_full().h(7).flex_none().flex().items_center().cursor_row_resize().hover((h) => h.bg(t.hover))
         .tooltip("Drag to resize the file list; double-click to fit it to the files")

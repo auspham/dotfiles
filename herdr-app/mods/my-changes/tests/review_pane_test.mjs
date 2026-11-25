@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { findReviewPane, splitTarget, followedLocation, reviewRecord, parseRecord, needsReload, toggleToApply, reviewKey, TOGGLE_TTL_MS } from "../review_pane.js";
+import { findReviewPane, splitTarget, followFocus, reviewRecord, parseRecord, needsReload, toggleToApply, reviewKey, TOGGLE_TTL_MS } from "../review_pane.js";
 
 const terminalPane = (pane, tab) => ({ pane, tab, terminal: `t-${pane}` });
 const modPane = (pane, tab, mod = "my-changes") => ({ pane, tab, terminal: null, mod });
@@ -15,10 +15,11 @@ assert.equal(splitTarget({ pane: "p4" }, all), null, "a focused mod pane is not 
 assert.equal(splitTarget(null, all), null, "nothing focused gives no pane to split");
 
 const fresh = { cwd: "/space", on: null }, last = { cwd: "/repo", on: null };
-assert.equal(followedLocation(modPane("p2", "A"), fresh, last), last, "keeps the last folder while the review pane has focus");
-assert.equal(followedLocation(terminalPane("p1", "A"), fresh, last), fresh, "follows a focused terminal");
-assert.equal(followedLocation(modPane("p4", "B", "files"), fresh, last), fresh, "follows the space folder for another mod's pane, as before");
-assert.equal(followedLocation(modPane("p2", "A"), fresh, null), fresh, "with no folder yet, takes the fresh one");
+assert.equal(followFocus(modPane("p2", "A"), fresh, last), last, "keeps the last folder while the review pane has focus");
+assert.equal(followFocus(terminalPane("p1", "A"), fresh, last), fresh, "follows a focused terminal");
+assert.equal(followFocus(modPane("p4", "B", "files"), fresh, last), fresh, "follows the space folder for another mod's pane, as before");
+assert.equal(followFocus(modPane("p2", "A"), fresh, null), fresh, "with no folder yet, takes the fresh one");
+assert.equal(followFocus(modPane("p2", "A"), null, "t7"), "t7", "keeps the coordinator's guide terminal while the review pane has focus");
 
 const file = { path: "src/a.js", status: "M", fresh: false, binary: false, add: 3, del: 1, hash: "h1", changedSince: true };
 const record = reviewRecord({ tab: "A", root: "/repo", on: undefined, against: "HEAD", hasHead: true, file, reviewed: false, stale: false });

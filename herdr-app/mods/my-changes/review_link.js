@@ -1,7 +1,7 @@
 // Links the Changes side panel to its tab's review pane through shared state: the panel opens the pane and says which file to show, the pane asks the panel to tick a file reviewed.
 
 import { panes, focused, run, shared, setShared, props } from "herdr";
-import { REVIEW_MOD, TOGGLE_KEY, reviewKey, findReviewPane, splitTarget, reviewRecord, parseRecord, toggleToApply } from "./review_pane.js";
+import { REVIEW_MOD, TOGGLE_KEY, reviewKey, findReviewPane, followFocus, splitTarget, reviewRecord, parseRecord, toggleToApply } from "./review_pane.js";
 
 /** True in the copy of the mod that runs as a review pane (opened with props {review, tab}). */
 export const isReviewPane = () => Boolean(props()?.review);
@@ -13,6 +13,14 @@ export const paneRecord = () => parseRecord(shared(reviewKey(String(props()?.tab
 export function paneLocation() {
   const record = paneRecord();
   return { cwd: record?.root ?? null, on: record?.on ?? null };
+}
+
+let lastTerminal = null;
+/** The focused terminal's address as the side panel follows it: kept while the review pane, which has no terminal, has focus. */
+export function followedTerminal() {
+  const f = focused(), pane = f?.pane ? panes().find((p) => p.pane === f.pane) : null;
+  lastTerminal = followFocus(pane, f?.terminal ?? null, lastTerminal);
+  return lastTerminal;
 }
 
 /** True when the focused tab has a review pane, so the side panel can leave the diff to it. */

@@ -24,8 +24,8 @@ export function splitTarget(focus, panes) {
   return row?.terminal ? row.pane : null;
 }
 
-/** The folder the side panel follows. A mod pane has no folder, so while the review pane has focus the panel keeps the last one instead of jumping to the space's folder. @template L @param {PaneRow | null | undefined} focusedPane @param {L} fresh @param {L | null} last @returns {L} */
-export function followedLocation(focusedPane, fresh, last) {
+/** What the side panel follows from focus (its folder, or the terminal whose guide it shows). The review pane has neither, so while it has focus the panel keeps the last value instead of jumping to the space's folder or dropping the guide. @template L @param {PaneRow | null | undefined} focusedPane @param {L} fresh @param {L | null} last @returns {L} */
+export function followFocus(focusedPane, fresh, last) {
   return focusedPane?.mod === REVIEW_MOD && last ? last : fresh;
 }
 
