@@ -45,7 +45,7 @@ assert.deepEqual(guideStats([{ level: raised, reviewed: false }, { level: raised
 assert.equal(canFinish({ needYou: 2, done: 1 }), false, "Done reviewing is enabled only when every Look closely file is reviewed");
 assert.equal(canFinish({ needYou: 2, done: 2 }), true);
 assert.equal(canFinish({ needYou: 0, done: 0 }), true, "with nothing to look closely at, Done reviewing is enabled");
-assert.equal(guidePath({ review: "reviewed", guide: "/g.json" }), null, "a reviewed child shows no banner");
+assert.equal(guidePath({ review: "reviewed", guide: "/g.json" }), "/g.json", "a reviewed child keeps its banner so it can show the Reviewed mark");
 
 const labels = { coord: "t2b", task: "login" };
 assert.deepEqual(notifyTarget(labels), { coord: "t2b", task: "login", text: "[Changes tab] The user finished reviewing login (clicked Done reviewing). Ask them before merging or closing it." }, "the coordinator is told when the user finishes a review");

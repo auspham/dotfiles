@@ -25,8 +25,9 @@ export class GuideSource {
 
   /** The banner for the Changes view `host`, or null without a guide. @param {object} t theme @param {any} host the Changes view */
   bar(t, host) {
+    const reviewed = terminals().find((x) => x.address === this.address)?.labels?.review === "reviewed";
     const branch = host.range === "branch", items = branch ? host.files.map((f) => ({ level: host.levelFor(f), reviewed: host.reviewed(f) })) : [];
-    return guideBanner(t, this.guide, branch ? guideStats(items) : null, { label: `Show since ${host.base?.name ?? "base"}`, run: (_e, cx) => host.setRange("branch", cx) }, { note: this.note, busy: this.busy, run: (_e, cx) => this.finish(host, cx) });
+    return guideBanner(t, this.guide, branch ? guideStats(items) : null, { label: `Show since ${host.base?.name ?? "base"}`, run: (_e, cx) => host.setRange("branch", cx) }, { note: this.note, busy: this.busy, reviewed, run: (_e, cx) => this.finish(host, cx) });
   }
 
   /** Marks the focused child reviewed and tells its coordinator, then takes the user back to that coordinator with a toast. @param {any} host the Changes view @param {any} cx */
@@ -53,7 +54,7 @@ export class GuideSource {
   entry(path, sig) { return this.guide ? guideEntry(this.guide, path, sig, headMoved(this.guide, this.head)) : null; }
 }
 
-/** The banner, or null without a guide. @param {object} t theme @param {import("./guide.js").Guide | null} guide @param {ReturnType<typeof guideStats> | null} stats null outside the branch range, where counts mean nothing @param {{ label: string, run: Function }} onShow the Show-since button @param {{ note: string, busy: boolean, run: Function }} onDone the Done reviewing button, its failure note and whether a finish is in flight */
+/** The banner, or null without a guide. @param {object} t theme @param {import("./guide.js").Guide | null} guide @param {ReturnType<typeof guideStats> | null} stats null outside the branch range, where counts mean nothing @param {{ label: string, run: Function }} onShow the Show-since button @param {{ note: string, busy: boolean, reviewed: boolean, run: Function }} onDone the Done reviewing button, its failure note, whether a finish is in flight and whether the child is already reviewed */
 export function guideBanner(t, guide, stats, onShow, onDone) {
   if (!guide) return null;
   const counts = stats ? `${stats.needYou} need you, ${stats.normal} normal, ${stats.skim} skim` : "";
@@ -62,11 +63,15 @@ export function guideBanner(t, guide, stats, onShow, onDone) {
     .child(h_flex().gap(8).items_center().flex_wrap()
       .when(Boolean(stats), (e) => e.child(div().text_color(t.muted).child(counts)).child(div().text_color(stats.done === stats.needYou ? t.ansi2 : t.blocked).child(`${stats.done}/${stats.needYou} need-you reviewed`)).child(doneButton(t, stats, onDone)).when(Boolean(onDone.note), (r) => r.child(div().text_color(t.blocked).child(onDone.note))))
       .when(!stats, (e) => e.child(div().id("guide-show").px(8).h(22).flex().items_center().rounded(5).bg(t.raised).text_color(t.foreground).cursor_pointer()
-        .hover((h) => h.bg(t.hover)).on_click(onShow.run).child(onShow.label))));
+        .hover((h) => h.bg(t.hover)).on_click(onShow.run).child(onShow.label)).when(onDone.reviewed, (r) => r.child(reviewedMark(t)))));
 }
 
-/** The Done reviewing button, dim and inert until canFinish. @param {object} t @param {ReturnType<typeof guideStats>} stats @param {{ busy: boolean, run: Function }} onDone */
+/** The inert green mark that takes the Done reviewing button's place once the child is reviewed. @param {object} t */
+const reviewedMark = (t) => div().id("guide-reviewed").px(8).h(22).flex().items_center().rounded(5).bg(t.ansi2 + "26").font_semibold().text_color(t.ansi2).child("Reviewed");
+
+/** The Done reviewing button, dim and inert until canFinish. @param {object} t @param {ReturnType<typeof guideStats>} stats @param {{ busy: boolean, reviewed: boolean, run: Function }} onDone */
 function doneButton(t, stats, onDone) {
+  if (onDone.reviewed) return reviewedMark(t);
   const ready = canFinish(stats), b = div().id("guide-done").px(8).h(22).flex().items_center().rounded(5).bg(t.raised).child("Done reviewing");
   if (ready && onDone.busy) return b.text_color(t.dim);
   return ready

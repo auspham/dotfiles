@@ -19,10 +19,10 @@ const text = (v, max) => (typeof v === "string" ? v.replace(/[\u0000-\u001f\u007
 /** @param {unknown} p @returns {boolean} */
 const safePath = (p) => typeof p === "string" && p.length > 0 && p.length <= 512 && !p.includes("\0") && !p.startsWith("/") && !p.split("/").includes("..");
 
-/** The guide file's path from a terminal's labels, or null when the review is not the user's. @param {Record<string, string> | undefined} labels @returns {string | null} */
+/** The guide file's path from a terminal's labels, or null when the review is not the user's. A reviewed child keeps its guide so the banner can show it is done. @param {Record<string, string> | undefined} labels @returns {string | null} */
 export function guidePath(labels) {
   const path = labels?.guide;
-  return labels?.review === "yours" && typeof path === "string" && path.startsWith("/") ? path : null;
+  return (labels?.review === "yours" || labels?.review === "reviewed") && typeof path === "string" && path.startsWith("/") ? path : null;
 }
 
 /** A guide with every field checked and bad entries dropped, or null when it cannot be trusted at all. @param {unknown} raw @returns {Guide | null} */
