@@ -20,6 +20,7 @@ fail() { echo "FAIL: $*" >&2; exit 1; }
 
 run prompt_input_exit s1
 grep -q 't1 claude.session= role= coord=' "$root/log" || fail "leaving on purpose clears the session and the role"
+grep -q 'coord= owner=' "$root/log" || fail "leaving on purpose clears the owner of a lent child"
 
 rm -f "$root/log"
 run other s1
