@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+# hreview: how an agent answers a review comment the user left in the Changes panel.
+#   hreview reply <thread-id> "<answer>"
+# Appends one JSON line {id, text, from, at} to ${XDG_STATE_HOME:-~/.local/state}/herdr-review/replies.jsonl,
+# which the panel reads; it shows the answer under the comment's lines. Bash 3.2 safe.
+set -euo pipefail
+
+die() { echo "hreview: $*" >&2; exit 1; }
+usage() { echo 'usage: hreview reply <thread-id> "<answer>"' >&2; exit 2; }
+
+[ "${1:-}" = reply ] || usage
+[ $# -ge 3 ] || usage
+id=$2; shift 2; text="$*"
+command -v jq >/dev/null 2>&1 || die "jq is not installed"
+# The panel only hears the terminal it sent the comment to.
+from="${HC_TERMINAL_ID:-}"
+[ -n "$from" ] || die "run this from your own herdr terminal (HC_TERMINAL_ID is not set)"
+printf %s "$id" | grep -Eq '^[a-z0-9]{4,16}$' || die "not a thread id: $id"
+[ -n "$(printf %s "$text" | tr -d '[:space:]')" ] || die "the answer is empty"
+
+dir="${XDG_STATE_HOME:-$HOME/.local/state}/herdr-review"
+mkdir -p "$dir"
+# One write of one line, so the panel never reads half a reply.
+line=$(jq -cn --arg id "$id" --arg text "$text" --arg from "$from" --argjson at "$(date +%s)" '{id: $id, text: $text, from: $from, at: $at}')
+printf '%s\n' "$line" >> "$dir/replies.jsonl"
+echo "hreview: answered $id"
