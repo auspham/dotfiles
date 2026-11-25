@@ -18,10 +18,22 @@ export function isLent(terminal) {
   return Boolean(terminal.labels?.owner);
 }
 
-/** Tooltip for a lent child: the owner's display name, or its address when it has none. */
-export function lentNote(terminal, all) {
+/**
+ * The name a terminal goes by in the tree: the label its own agent row would show
+ * (`names`, by address), else its task label, else whatever the terminal says.
+ * hcoord children have no terminal name, so the row label is what tells them apart.
+ */
+export function displayName(terminal, names) {
+  const label = names.get(terminal.address);
+  // An automatic tab number says nothing about the agent.
+  if (label && !/^\d+$/.test(label)) return label;
+  return terminal.labels?.task || terminal.name || terminal.template || terminal.program?.name || terminal.address;
+}
+
+/** Tooltip for a lent child: the owner's display name, or its address when it is gone. */
+export function lentNote(terminal, all, names) {
   const owner = terminal.labels?.owner;
   if (!owner) return null;
   const found = all.find((x) => x.address === owner);
-  return `Lent by ${found?.name || owner}`;
+  return `Lent by ${found ? displayName(found, names) : owner}`;
 }

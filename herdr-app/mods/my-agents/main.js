@@ -6,7 +6,7 @@ import { agents, appHome, readTextFile, nextCommand, terminals, panes, focused, 
 
 import { ARCHIVE_FILE, parseArchived, splitArchived } from "./archive.js";
 import { archivedSection } from "./archive_view.js";
-import { parentOf, isLent, lentNote } from "./parents.js";
+import { parentOf, isLent, displayName, lentNote } from "./parents.js";
 
 function find(node, id) {
   if (node?.id === id) return node;
@@ -242,7 +242,7 @@ export default class Agents extends View {
     return kids.flatMap((k, i) => {
       const last = i === kids.length - 1;
       return [
-        { t: k, lines: [...lead, last ? "└" : "├"], lent: isLent(k) ? lentNote(k, all) : null },
+        { t: k, lines: [...lead, last ? "└" : "├"] },
         ...this.tree(all, k.address, [...lead, last ? "" : "│"]),
       ];
     });
@@ -270,7 +270,7 @@ export default class Agents extends View {
         .when(Boolean(l), el => el.border_l(1.5).border_color(t.input))
         .when(l === "└" || l === "├", el => el.border_b(1.5).rounded_bl(6))))
       .when(Boolean(pic), el => el.child(div().mr(8).child(pic)))
-      .child(div().flex_1().truncate().text_color(on ? t.foreground : t.muted).child(k.name || k.template || k.program?.name || k.address))
+      .child(div().flex_1().truncate().text_color(on ? t.foreground : t.muted).child(s.name))
       .when(Boolean(s.lent), el => el.child(div().id(`lent-${k.address}`).flex_none().mr(6).px(4).h(14).rounded(4).bg(t.dim + "26").text_size(9.5).text_color(t.dim).flex().items_center().tooltip(s.lent).child("lent")))
       .child(this.status(t, { status: st }, compact));
   }
@@ -338,7 +338,7 @@ export default class Agents extends View {
       const subs = collapsed ? [] : this.tree(all, a.address);
       const r = row(a, i, subs);
       if (this.folded.has(a.address)) return [r];
-      return [r, ...subs.map((s) => this.subRow(t, s, shown, byPriority))];
+      return [r, ...subs.map((s) => this.subRow(t, { ...s, name: displayName(s.t, labels), lent: isLent(s.t) ? lentNote(s.t, all, labels) : null }, shown, byPriority))];
     };
 
     // Tree view: a rail down the left of a space's agents, an elbow on the last one, the rail carried past an agent's sub-agents.
@@ -389,7 +389,7 @@ export default class Agents extends View {
     // Read the pane snapshot once: every host read copies the whole list into JS.
     const leads = leadPanes(panes());
     const tabs = new Map(spaces().flatMap(s => s.tabs).map(tab => [tab.id, tab]));
-    const labels = new Map(list.map(a => {
+    const labels = new Map(live.map(a => {
       const tab = tabs.get(a.tab);
       const many = tabCounts.get(a.tab) > 1;
       return [a.address, tab ? title(many ? { ...tab, named: false } : tab, many ? a : leads.get(a.tab)) : (a.title || a.program?.name || "")];
