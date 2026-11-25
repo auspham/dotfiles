@@ -11,9 +11,6 @@ const comments = (n) => `${n} comment${n === 1 ? "" : "s"}`;
 /** The threads whose newest comment waits for Send. @param {Thread[]} threads */
 export const draftsOf = (threads) => threads.filter(isDraft);
 
-/** The Send button's label. @param {number} n */
-export const sendLabel = (n) => `Send ${comments(n)}`;
-
 /** The threads of a batch still there at delivery: one deleted while the agent was busy is dropped. @param {Thread[]} threads @param {string[]} ids */
 export const stillThere = (threads, ids) => threads.filter((t) => ids.includes(t.id));
 

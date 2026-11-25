@@ -38,7 +38,7 @@ function wrapped(text, cols, tone, max = Infinity) {
 
 /** @param {import("./comment_threads.js").Exchange} e @returns {[string, Tone]} */
 function answerOf(e) {
-  if (e.status === "draft") return e.a ? [`${e.a} Still a draft; Send tries again.`, "error"] : ["Draft: not sent until you click Send", "hint"];
+  if (e.status === "draft") return e.a ? [`${e.a} Send all tries again.`, "error"] : ["Queued: not sent until you click Send all", "hint"];
   if (e.status === "held") return [`Waiting for ${e.to?.name ?? "the agent"} to be free…`, "wait"];
   if (e.status === "sent") return [`Sent to ${e.to?.name ?? "the agent"}`, "wait"];
   if (e.status === "pending") return ["Thinking…", "wait"];
@@ -59,7 +59,7 @@ export function threadLines(t, cols, { collapsed, outdated }) {
     if (e.status === "done" && e.to) out.push({ text: `${e.to.name}:`, tone: "who" });
     out.push(...wrapped(text, cols, tone, MAX_ANSWER_LINES));
   }
-  const hint = isDraft(t) ? "Click to edit, send or discard the draft" : waiting(t) ? "Click to collapse, resolve or delete" : "Click to reply, collapse, resolve or delete";
+  const hint = isDraft(t) ? "Click to edit or delete" : waiting(t) ? "Click to collapse, resolve or delete" : "Click to reply, collapse, resolve or delete";
   out.push({ text: hint, tone: "hint" });
   return out;
 }

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { wrapText, threadLines, blockHeight, blockCols, layoutItems, placeThreads, BLOCK_PAD, MAX_ANSWER_LINES } from "../comment_layout.js";
 import { newThread, patchLast } from "../comment_threads.js";
 import { splitSources } from "../comment_anchor.js";
+import { writeMode, barAction, barTitle } from "../comment_bar.js";
 
 assert.deepEqual(wrapText("one two three four", 9), ["one two", "three", "four"], "wraps at word breaks");
 assert.deepEqual(wrapText("abcdefghijkl", 8), ["abcdefgh", "ijkl"], "breaks a word longer than the line");
@@ -10,9 +11,9 @@ assert.deepEqual(wrapText("a\n\nb", 20), ["a", "", "b"], "keeps the answer's bla
 const anchor = { lines: [{ side: "new", n: 3, text: "let x = 2" }], before: [], after: [] };
 const t = newThread({ id: "cabc123", path: "a.js", anchor, q: "Why is this two?", now: 1 });
 const open = { collapsed: false, outdated: false };
-assert.deepEqual(threadLines(t, 80, open).map((l) => l.text), ["Comment on line 3", "You: Why is this two?", "Draft: not sent until you click Send", "Click to edit, send or discard the draft"], "a new comment shows as a draft, not as sent");
+assert.deepEqual(threadLines(t, 80, open).map((l) => l.text), ["Comment on line 3", "You: Why is this two?", "Queued: not sent until you click Send all", "Click to edit or delete"], "a new comment shows as queued, not as sent");
 const retry = threadLines(patchLast([t], t.id, { a: "Could not send to fixer: exit 1" })[0], 80, open)[2];
-assert.deepEqual([retry.text, retry.tone], ["Could not send to fixer: exit 1 Still a draft; Send tries again.", "error"], "a draft whose send failed says why and that Send retries it");
+assert.deepEqual([retry.text, retry.tone], ["Could not send to fixer: exit 1 Send all tries again.", "error"], "a queued comment whose send failed says why and that Send all retries it");
 const pending = patchLast([t], t.id, { status: "pending" })[0];
 assert.deepEqual(threadLines(pending, 80, open).slice(2).map((l) => l.text), ["Thinking…", "Click to collapse, resolve or delete"], "a comment asked of claude shows Thinking");
 const sent = patchLast([t], t.id, { status: "sent", to: { address: "t7", name: "fixer" } })[0];
@@ -47,5 +48,21 @@ assert.deepEqual(unified.outdated.map((x) => x.id), ["cgone00"], "a thread whose
 assert.deepEqual([...unified.marked], [3], "marks the anchored rows in the gutter");
 const split = [rows[0], { kind: "pair", left: { ...rows[1] }, right: rows[1] }, { kind: "pair", left: rows[2], right: rows[3] }, { kind: "pair", left: { ...rows[4] }, right: rows[4] }];
 assert.deepEqual(placeThreads([t], rows, splitSources(split, rows)).placed[0].after, 2, "in split mode a thread sits under the pair that draws its line");
+
+const sent2 = patchLast([t], t.id, { status: "sent" })[0], answered2 = patchLast([sent2], t.id, { status: "done", a: "ok" })[0];
+assert.deepEqual(barAction({ typed: true, queued: 2, mode: "new" }), { kind: "queue", label: "Queue comment" }, "typing turns the primary button into Queue comment");
+assert.deepEqual(barAction({ typed: false, queued: 2, mode: "new" }), { kind: "send", label: "Send all (2)" }, "an empty input with comments queued offers Send all");
+assert.equal(barAction({ typed: false, queued: 0, mode: "new" }), null, "nothing typed and nothing queued shows no primary button");
+assert.equal(barAction({ typed: true, queued: 0, mode: "reply" }).label, "Queue reply", "typing under an answered thread queues a reply");
+assert.equal(barAction({ typed: true, queued: 1, mode: "edit" }).label, "Save changes", "typing while editing a queued comment saves it");
+assert.deepEqual(barAction({ typed: true, queued: 1, mode: null }), { kind: "send", label: "Send all (1)" }, "with no input shown the button still sends the queue");
+assert.equal(writeMode(null, null), null, "a closed bar writes nothing");
+assert.equal(writeMode({ mode: "new" }, null), "new", "new lines take a new comment");
+assert.equal(writeMode({ mode: "thread" }, t), null, "a queued comment shows no input until Edit, so a reply never stacks on it");
+assert.equal(writeMode({ mode: "thread", editing: true }, t), "edit", "Edit rewrites the queued comment");
+assert.equal(writeMode({ mode: "thread" }, sent), null, "a thread waiting on its agent takes no reply");
+assert.equal(writeMode({ mode: "thread" }, answered2), "reply", "an answered thread takes a reply");
+assert.equal(barTitle(null, "", 3), "3 comments queued, not sent yet", "the bar with no thread says how many are queued");
+assert.equal(barTitle("new", "lines 6-9", 0), "New comment on lines 6-9", "the bar names the lines a new comment is on");
 
 console.log("my-changes comment layout: all checks passed");

@@ -4,8 +4,7 @@ import { div } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
 import { readTextFile, terminals, exec, run, notify } from "herdr";
 import { followedTerminal } from "./review_link.js";
-import { sendLabel, sentSuffix } from "./comment_batch.js";
-import { sendDrafts } from "./comment_actions.js";
+import { sentSuffix } from "./comment_batch.js";
 import { guidePath, parseGuide, headMoved, guideEntry, guideStats, canFinish, notifyTarget, shouldFinish, finishOutcome, deliveryAction, undeliveredToast, RETRY_MS } from "./guide.js";
 
 /** The guide in force for the Changes root, re-read when its file changes. */
@@ -30,7 +29,7 @@ export class GuideSource {
   bar(t, host) {
     const reviewed = terminals().find((x) => x.address === this.address)?.labels?.review === "reviewed";
     const branch = host.range === "branch", items = branch ? host.files.map((f) => ({ level: host.levelFor(f), reviewed: host.reviewed(f) })) : [];
-    return guideBanner(t, this.guide, branch ? guideStats(items) : null, { label: `Show since ${host.base?.name ?? "base"}`, run: (_e, cx) => host.setRange("branch", cx) }, { note: this.note, busy: this.busy, reviewed, run: (_e, cx) => this.finish(host, cx), drafts: host.comments.drafts(), send: (_e, cx) => sendDrafts(host, cx) });
+    return guideBanner(t, this.guide, branch ? guideStats(items) : null, { label: `Show since ${host.base?.name ?? "base"}`, run: (_e, cx) => host.setRange("branch", cx) }, { note: this.note, busy: this.busy, reviewed, run: (_e, cx) => this.finish(host, cx), queued: host.comments.drafts() });
   }
 
   /** Sends the unsent comments, marks the focused child reviewed and tells its coordinator, then takes the user back to that coordinator with a toast. @param {any} host the Changes view @param {any} cx */
@@ -77,7 +76,7 @@ async function deliverWhenFree(cx, target) {
   if (sent?.code !== 0) notify(undeliveredToast(target.task));
 }
 
-/** The banner, or null without a guide. @param {object} t theme @param {import("./guide.js").Guide | null} guide @param {ReturnType<typeof guideStats> | null} stats null outside the branch range, where counts mean nothing @param {{ label: string, run: Function }} onShow the Show-since button @param {{ note: string, busy: boolean, reviewed: boolean, run: Function, drafts: number, send: Function }} onDone the Done reviewing button, its failure note, whether a finish is in flight, whether the child is already reviewed, and the Send button beside it */
+/** The banner, or null without a guide. @param {object} t theme @param {import("./guide.js").Guide | null} guide @param {ReturnType<typeof guideStats> | null} stats null outside the branch range, where counts mean nothing @param {{ label: string, run: Function }} onShow the Show-since button @param {{ note: string, busy: boolean, reviewed: boolean, run: Function, queued: number }} onDone the Done reviewing button, its failure note, whether a finish is in flight, whether the child is already reviewed, and how many comments it sends first */
 export function guideBanner(t, guide, stats, onShow, onDone) {
   if (!guide) return null;
   const counts = stats ? `${stats.needYou} need you, ${stats.normal} normal, ${stats.skim} skim` : "";
@@ -87,8 +86,7 @@ export function guideBanner(t, guide, stats, onShow, onDone) {
       .when(Boolean(stats), (e) => e.child(div().text_color(t.muted).child(counts)).child(div().text_color(stats.done === stats.needYou ? t.ansi2 : t.blocked).child(`${stats.done}/${stats.needYou} need-you reviewed`)).child(doneButton(t, stats, onDone)).when(Boolean(onDone.note), (r) => r.child(div().text_color(t.blocked).child(onDone.note))))
       .when(!stats, (e) => e.child(div().id("guide-show").px(8).h(22).flex().items_center().rounded(5).bg(t.raised).text_color(t.foreground).cursor_pointer()
         .hover((h) => h.bg(t.hover)).on_click(onShow.run).child(onShow.label)).when(onDone.reviewed, (r) => r.child(reviewedMark(t))))
-      .when(onDone.drafts > 0, (e) => e.child(div().id("guide-send").px(8).h(22).flex().items_center().rounded(5).bg(t.raised).text_color(t.foreground).cursor_pointer()
-        .hover((h) => h.bg(t.hover)).on_click(onDone.send).child(sendLabel(onDone.drafts)))));
+      .when(onDone.queued > 0, (e) => e.child(div().id("guide-queued").text_color(t.ansi3).tooltip("Send all is in the comment bar under the diff; Done reviewing sends them too").child(`${onDone.queued} queued`))));
 }
 
 /** The inert green mark that takes the Done reviewing button's place once the child is reviewed. @param {object} t */

@@ -10,7 +10,9 @@ import { splitSources } from "./comment_anchor.js";
 export const LINE_H = 20, CHAR = 6.7;
 // A block starts after the line numbers and keeps clear of the scrollbar; INSET is that margin plus its rail and padding.
 const MARGIN = 40, INSET = MARGIN + 2 + 16 + 14;
-const ADD_KEY = "cm-add";
+// Room under the last row, so the comment bar never covers it.
+const BAR_ROOM = 130;
+const ADD_KEY = "cm-add", ROOM_KEY = "cm-room";
 
 /** A list key for a thread block. It must not end in a digit: pickRow reads a trailing number as a row index. @param {string} id */
 const blockKey = (id) => `cm-${id}-t`;
@@ -37,13 +39,14 @@ function blocks(host, splitting, width) {
   };
   const out = [...outdated.map((t) => block(t, -1, true)), ...placed.map((p) => block(p.thread, p.after, false))];
   if (host.sel && !host.composer) out.push({ after: selEnd(host), key: ADD_KEY, h: blockHeight(1, LINE_H), lines: [{ text: "+ Comment on these lines (c)", tone: "add" }] });
+  if (host.composer || store.drafts() > 0) out.push({ after: (splitting ? host.split.length : host.rows.length) - 1, key: ROOM_KEY, h: BAR_ROOM, lines: [] });
   return { out, marked };
 }
 
 /** The diff's list items, their heights and the rows to mark in the gutter, kept until something they depend on changes. @param {any} host the Changes view @param {boolean} splitting */
 export function commentLayout(host, splitting) {
   const width = Math.max(240, host.diffW - 12);
-  const key = [host.mode, host.open, host.splitVersion, host.layoutKey, Math.round(width), host.comments.version, JSON.stringify(host.sel), Boolean(host.composer)].join("|");
+  const key = [host.mode, host.open, host.splitVersion, host.layoutKey, Math.round(width), host.comments.version, JSON.stringify(host.sel), Boolean(host.composer), host.comments.drafts()].join("|");
   if (host.commentKey === key) return host.commentCache;
   const { out, marked } = blocks(host, splitting, width);
   const count = splitting ? host.split.length : host.rows.length;
@@ -57,6 +60,7 @@ const toneColor = (t, tone) => ({ head: t.muted, you: t.foreground, who: t.ansi5
 
 /** One inline block: a thread or the Comment row. Drawn inside the list's renderer, so it has no handlers; the list's on_item_click handles its clicks. @param {Block & { lines: { text: string, tone: string }[] }} b @param {object} t theme @param {number} width */
 export function blockView(b, t, width) {
+  if (!b.lines.length) return div().w(width).h(b.h).flex_none();
   const open = b.thread && !b.thread.resolved && b.lines.length > 1;
   return div().w(width).h(b.h).flex_none().pl(MARGIN).py(5).cursor_pointer()
     .child(v_flex().w_full().h_full().pl(8).pr(8).border_l(2).border_color(b.thread?.resolved ? t.border : t.accent).bg(b.thread ? (open ? t.raised : t.background) : t.accent + "14")

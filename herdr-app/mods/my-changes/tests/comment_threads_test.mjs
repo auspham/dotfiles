@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { newThread, addReply, patchLast, patchMany, editDraft, discardDraft, isDraft, setResolved, removeThread, lastOf, waiting, settleAfterReload, parseThreads, threadId } from "../comment_threads.js";
-import { draftsOf, sendLabel, stillThere, batchPath, batchNote, batchLine, sentSuffix } from "../comment_batch.js";
+import { draftsOf, stillThere, batchPath, batchNote, batchLine, sentSuffix } from "../comment_batch.js";
 import { parseReplies, applyReplies, repliesPath, listening } from "../comment_replies.js";
 import { pickTarget, commentNote, claudePrompt } from "../comment_prompt.js";
 import { parseShared, parseRequest, requestToApply, threadsKey } from "../comment_share.js";
@@ -88,8 +88,6 @@ assert.equal(parseRequest({ op: "edit", root: "/r", path: "a", thread: "cabc123"
 const other = newThread({ id: "cdef456", path: "src/b.js", anchor, q: "Rename this?", now: 3000 });
 const batch = draftsOf([t0, sent, other]);
 assert.deepEqual(batch.map((t) => t.id), ["cabc123", "cdef456"], "Send takes every draft and leaves sent comments alone");
-assert.equal(sendLabel(3), "Send 3 comments", "the button says how many comments it sends");
-assert.equal(sendLabel(1), "Send 1 comment", "one comment is not called comments");
 assert.deepEqual(stillThere([other], ["cabc123", "cdef456"]).map((t) => t.id), ["cdef456"], "a comment deleted while the agent was busy is left out of the batch");
 assert.ok(lastOf(patchMany([t0, other], ["cabc123", "cdef456"], { status: "held", to: agent })[1]).to, "every comment in a batch is marked with the agent it goes to");
 const path = batchPath("/s", 36);

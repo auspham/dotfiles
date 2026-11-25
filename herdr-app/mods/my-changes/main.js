@@ -12,7 +12,7 @@ import { CommentStore } from "./comment_store.js";
 import { sender, pollReplies } from "./comment_send.js";
 import { listening } from "./comment_replies.js";
 import { commentLayout, blockView } from "./comment_view.js";
-import { openComposer, closeComposer, clickBlock, submitComposer, composerBar, sendButton } from "./comment_actions.js";
+import { openComposer, closeComposer, clickBlock, submitComposer, composerBar } from "./comment_actions.js";
 
 let lastLocation = null;
 function location() {
@@ -164,7 +164,9 @@ export default class Changes extends View {
     this.listH = Number(this.read("listH")) || 0; this.listSeen = 200; this.panelH = 800; this.ldrag = null; // listH 0: as tall as its rows
     // The review pane copy draws what the side panel publishes, taken in by a timer since render must not change state; it reads no git state of its own.
     this.comments = new CommentStore(isReviewPane()); this.sendDrafts = sender(this, this.comments); this.composer = null;
-    this.commentInput = InputState.new({ placeholder: "Comment on these lines; Enter saves a draft" });
+    this.commentInput = InputState.new({ placeholder: "Write a comment; Enter queues it" });
+    // The bar's primary button turns from Send all to Queue as typing starts, so redraw when the input fills or empties.
+    this.commentInput.on("change", (_e, cx) => { const has = Boolean(this.commentInput.value().trim()); if (has !== this.hasComment) { this.hasComment = has; cx.notify(); } });
     this.commentInput.on("submit", (_e, cx) => submitComposer(this, cx));
     this.commentInput.on("focus", (_e, cx) => { this.typing = true; cx.notify(); });
     this.commentInput.on("blur", (_e, cx) => { this.typing = false; cx.notify(); });
@@ -1028,7 +1030,6 @@ export default class Changes extends View {
         .child(div().id("open-zed").h(26).px(10).flex().flex_none().items_center().rounded(6).cursor_pointer().text_size(12).bg(t.raised).text_color(t.muted)
           .hover((h) => h.bg(t.hover).text_color(t.foreground)).tooltip("Open in Zed at the selected line, or the first change (key: o)")
           .on_click((_e, cx) => this.openInEditor(cx)).child(this.barW < COMPACT_BAR ? "Zed" : "Open in Zed"))
-        .children([sendButton(this, t)].filter(Boolean))
         .child(div().id("mark-reviewed").h(26).px(10).flex().flex_none().items_center().rounded(6).cursor_pointer().text_size(12)
           .bg(openFile && this.reviewed(openFile) ? t.raised : t.solid).text_color(openFile && this.reviewed(openFile) ? t.muted : t.solid_foreground)
           .on_click((_e, cx) => this.toggleReviewed(this.open, cx, true))

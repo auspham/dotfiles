@@ -1,13 +1,14 @@
-// The comment bar under the diff: it writes a new comment on the selected lines, or replies to, collapses, resolves and deletes the clicked thread. It sits outside the virtual list because rows inside one cannot hold their own click handlers.
+// The comment bar under the diff: one primary button queues what is typed or sends the queue, beside the clicked thread's secondary actions. It sits outside the virtual list because rows inside one cannot hold their own click handlers.
 
 import { div } from "gpui-kit";
 import { h_flex, v_flex, Input } from "gpui-base";
 import { makeAnchor, toUnified, anchorLabel } from "./comment_anchor.js";
 import { commentKey } from "./comment_view.js";
-import { waiting, isDraft, lastOf } from "./comment_threads.js";
-import { sendLabel } from "./comment_batch.js";
+import { isDraft, lastOf } from "./comment_threads.js";
+import { writeMode, barAction, barTitle } from "./comment_bar.js";
 
-/** @typedef {{ mode: "new", anchor: import("./comment_anchor.js").Anchor } | { mode: "thread", id: string }} Composer */
+/** editing: the thread's queued comment is in the input, through Edit. */
+/** @typedef {{ mode: "new", anchor: import("./comment_anchor.js").Anchor } | { mode: "thread", id: string, editing?: boolean }} Composer */
 
 /** Opens the bar for a new comment on the selected lines. @param {any} host the Changes view @param {any} cx */
 export function openComposer(host, cx) {
@@ -28,22 +29,26 @@ export function clickBlock(host, key, cx) {
   const hit = commentKey(key);
   if (!hit) return false;
   if (hit === "add") { openComposer(host, cx); return true; }
-  const thread = host.comments.find(hit);
   host.composer = { mode: "thread", id: hit };
-  // A draft opens with its text, so the bar edits it rather than stack a second comment.
-  host.commentInput.set_value(thread && isDraft(thread) ? lastOf(thread).q : "");
-  if (thread && !waiting(thread)) host.commentInput.focus();
+  host.commentInput.set_value("");
+  if (writeMode(host.composer, host.comments.find(hit) ?? null)) host.commentInput.focus();
   cx.notify();
   return true;
 }
 
-/** Saves what the bar holds as a draft: a new thread, a reply, or the open thread's edited draft. @param {any} host @param {any} cx */
+/** Puts the thread's queued comment in the input to rewrite it. @param {any} host @param {any} thread @param {any} cx */
+function editQueued(host, thread, cx) {
+  host.composer = { mode: "thread", id: thread.id, editing: true };
+  host.commentInput.set_value(lastOf(thread).q); host.commentInput.focus(); cx.notify();
+}
+
+/** Queues what the bar holds: a new thread, a reply, or the thread's rewritten queued comment. @param {any} host @param {any} cx */
 export function submitComposer(host, cx) {
-  const text = host.commentInput.value().trim(), c = host.composer;
-  if (!text || !c || !host.root || !host.open) return;
-  const where = { root: host.root, path: host.open }, thread = c.mode === "thread" ? host.comments.find(c.id) : null;
+  const text = host.commentInput.value().trim(), c = host.composer, mode = writeMode(c, barThread(host));
+  if (!text || !mode || !host.root || !host.open) return;
+  const where = { root: host.root, path: host.open };
   if (c.mode === "new") host.comments.add({ ...where, anchor: c.anchor, text });
-  else host.comments.act(thread && isDraft(thread) ? "edit" : "reply", { ...where, id: c.id, text });
+  else host.comments.act(mode, { ...where, id: c.id, text });
   host.sel = null; host.publishComments();
   closeComposer(host, cx);
 }
@@ -65,35 +70,45 @@ export function sendDrafts(host, cx) {
   return batch;
 }
 
-/** The file bar's Send button beside Mark reviewed, or null with no drafts. @param {any} host @param {object} t theme */
-export function sendButton(host, t) {
-  const n = host.comments.drafts();
-  if (!n) return null;
-  return div().id("send-drafts").h(26).px(10).flex().flex_none().items_center().rounded(6).cursor_pointer().text_size(12).bg(t.raised).text_color(t.foreground)
-    .hover((h) => h.bg(t.hover)).tooltip("Send every draft comment to the agent at once").on_click((_e, cx) => sendDrafts(host, cx)).child(sendLabel(n));
-}
+/** The open thread, or null for a new comment or a closed bar. @param {any} host */
+const barThread = (host) => (host.composer?.mode === "thread" ? host.comments.find(host.composer.id) ?? null : null);
 
 /** @param {object} t @param {{ id: string, label: string, click: Function, strong?: boolean }} spec */
-const button = (t, { id, label, click, strong = false }) => div().id(id).h(24).px(9).flex().flex_none().items_center().rounded(6).text_size(11.5).cursor_pointer()
-  .bg(strong ? t.solid : t.raised).text_color(strong ? t.solid_foreground : t.muted).hover((h) => h.bg(strong ? t.solid : t.hover).text_color(strong ? t.solid_foreground : t.foreground)).on_click(click).child(label);
+const button = (t, { id, label, click, strong = false }) => div().id(id).h(26).px(10).flex().flex_none().items_center().rounded(6).text_size(12).cursor_pointer()
+  .when(strong, (e) => e.font_semibold().bg(t.solid).text_color(t.solid_foreground))
+  .when(!strong, (e) => e.border_1().border_color(t.border).text_color(t.foreground).hover((h) => h.bg(t.hover)))
+  .on_click(click).child(label);
 
-/** The bar, or null when it is closed or its thread is gone. @param {any} host @param {object} t theme */
+/** The secondary buttons for the bar's thread. @param {any} host @param {object} t @param {any} thread */
+function threadButtons(host, t, thread) {
+  const queued = isDraft(thread) && !host.composer.editing, collapsed = host.comments.collapsed.has(thread.id);
+  return [
+    queued && button(t, { id: "cm-edit", label: "Edit", click: (_e, cx) => editQueued(host, thread, cx) }),
+    queued && thread.exchanges.length > 1 && button(t, { id: "cm-unqueue", label: "Remove from queue", click: (_e, cx) => act(host, "discard", thread.id, cx) }),
+    button(t, { id: "cm-resolve", label: thread.resolved ? "Reopen" : "Resolve", click: (_e, cx) => act(host, thread.resolved ? "reopen" : "resolve", thread.id, cx) }),
+    button(t, { id: "cm-collapse", label: collapsed ? "Expand" : "Collapse", click: (_e, cx) => act(host, "collapse", thread.id, cx) }),
+    button(t, { id: "cm-delete", label: "Delete", click: (_e, cx) => act(host, "delete", thread.id, cx) }),
+  ].filter(Boolean);
+}
+
+/** The primary button from what is typed and queued, or null. @param {any} host @param {object} t @param {import("./comment_bar.js").WriteMode | null} mode */
+function primaryButton(host, t, mode) {
+  const action = barAction({ typed: Boolean(host.commentInput.value().trim()), queued: host.comments.drafts(), mode });
+  if (!action) return null;
+  const click = action.kind === "queue" ? (_e, cx) => submitComposer(host, cx) : (_e, cx) => { sendDrafts(host, cx); closeComposer(host, cx); };
+  return button(t, { id: "cm-primary", label: action.label, click, strong: true });
+}
+
+/** The bar: open on a thread or new lines, or showing Send all while comments are queued; null otherwise. @param {any} host @param {object} t theme */
 export function composerBar(host, t) {
-  const c = host.composer, thread = c?.mode === "thread" ? host.comments.find(c.id) : null;
-  if (!c || (c.mode === "thread" && !thread)) return null;
-  const label = c.mode === "new" ? `Comment on ${anchorLabel(c.anchor)}` : `Thread on ${anchorLabel(thread.anchor)}`;
-  const canWrite = c.mode === "new" || !waiting(thread), draft = thread && isDraft(thread), drafts = host.comments.drafts();
-  const row = h_flex().gap(6).items_center().flex_wrap()
-    .when(canWrite, (e) => e.child(button(t, { id: "cm-save", label: c.mode === "new" ? "Add draft" : draft ? "Save draft" : "Reply", click: (_e, cx) => submitComposer(host, cx), strong: true })))
-    .when(drafts > 0, (e) => e.child(button(t, { id: "cm-send", label: sendLabel(drafts), click: (_e, cx) => { sendDrafts(host, cx); closeComposer(host, cx); } })))
-    .when(Boolean(draft) && thread.exchanges.length > 1, (e) => e.child(button(t, { id: "cm-discard", label: "Discard draft", click: (_e, cx) => act(host, "discard", thread.id, cx) })));
-  const actions = thread ? row
-    .child(button(t, { id: "cm-collapse", label: host.comments.collapsed.has(thread.id) ? "Expand" : "Collapse", click: (_e, cx) => act(host, "collapse", thread.id, cx) }))
-    .child(button(t, { id: "cm-resolve", label: thread.resolved ? "Reopen" : "Resolve", click: (_e, cx) => act(host, thread.resolved ? "reopen" : "resolve", thread.id, cx) }))
-    .child(button(t, { id: "cm-delete", label: "Delete", click: (_e, cx) => act(host, "delete", thread.id, cx) })) : row;
+  const c = host.composer, thread = barThread(host), queued = host.comments.drafts();
+  if (c?.mode === "thread" && !thread) return null;
+  if (!c && !queued) return null;
+  const mode = writeMode(c, thread), where = c?.mode === "new" ? anchorLabel(c.anchor) : thread ? anchorLabel(thread.anchor) : "";
   return v_flex().id("comment-bar").absolute().left(8).right(14).bottom(8).p(8).gap(6).rounded(8).bg(t.popover ?? t.background).border_1().border_color(t.accent).text_size(12)
     .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
-    .child(h_flex().gap(8).items_center().child(div().flex_1().min_w(0).truncate().text_size(11).text_color(t.muted).child(label)).child(button(t, { id: "cm-close", label: "Esc", click: (_e, cx) => closeComposer(host, cx) })))
-    .when(canWrite, (e) => e.child(div().h(28).px(8).flex().items_center().rounded(6).border_1().border_color(t.border).child(Input.new(host.commentInput).h_full().text_size(12).text_color(t.foreground))))
-    .child(actions);
+    .child(h_flex().gap(8).items_center().child(div().flex_1().min_w(0).truncate().text_color(t.foreground).font_semibold().child(barTitle(mode, where, queued)))
+      .when(Boolean(c), (e) => e.child(button(t, { id: "cm-close", label: "Esc", click: (_e, cx) => closeComposer(host, cx) }))))
+    .when(Boolean(mode), (e) => e.child(div().h(28).px(8).flex().items_center().rounded(6).border_1().border_color(t.border).child(Input.new(host.commentInput).h_full().text_size(12).text_color(t.foreground))))
+    .child(h_flex().gap(6).items_center().flex_wrap().children(thread ? threadButtons(host, t, thread) : []).child(div().flex_1()).children([primaryButton(host, t, mode)].filter(Boolean)));
 }
