@@ -17,6 +17,15 @@
             "timeout": 15
           }
         ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$HOME/.claude/hooks/herdr-turn-source.sh\"",
+            "timeout": 5
+          }
+        ]
       }
     ],
     "PreToolUse": [
