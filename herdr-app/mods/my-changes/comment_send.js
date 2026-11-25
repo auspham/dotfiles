@@ -5,7 +5,7 @@ import { followedTerminal } from "./review_link.js";
 import { deliveryAction, RETRY_MS } from "./guide.js";
 import { pickTarget, agentMessage, claudePrompt } from "./comment_prompt.js";
 import { patchLast, setSession } from "./comment_threads.js";
-import { repliesPath, parseReplies, applyReplies } from "./comment_replies.js";
+import { repliesPath, parseReplies, applyReplies, listening } from "./comment_replies.js";
 
 /** @typedef {import("./comment_store.js").CommentStore} CommentStore */
 
@@ -54,7 +54,7 @@ export function deliverer(host, store) {
 const stateHomes = new Map();
 /** Reads the hreview replies file and joins new answers to their threads; true when one arrived. @param {CommentStore} store @param {string | null} on */
 export async function pollReplies(store, on) {
-  if (!store.key || !store.threads.some((t) => t.exchanges[t.exchanges.length - 1].to)) return false;
+  if (!store.key || !listening(store.threads)) return false;
   if (!stateHomes.get(on)) stateHomes.set(on, (await exec("sh", ["-c", 'printf %s "${XDG_STATE_HOME:-$HOME/.local/state}"'], { on }).catch(() => null))?.stdout || null);
   const home = stateHomes.get(on);
   if (!home) return false;

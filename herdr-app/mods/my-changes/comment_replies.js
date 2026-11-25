@@ -34,3 +34,6 @@ export function applyReplies(threads, replies) {
   });
   return { threads: next, changed };
 }
+
+/** Whether to keep reading the replies file: some thread's newest comment went to an agent, which may answer more than once. @param {Thread[]} threads */
+export const listening = (threads) => threads.some((t) => Boolean(lastOf(t).to));

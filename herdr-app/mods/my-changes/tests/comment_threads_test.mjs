@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { newThread, addReply, patchLast, setResolved, removeThread, lastOf, waiting, settleAfterReload, parseThreads, threadId } from "../comment_threads.js";
-import { parseReplies, applyReplies, repliesPath } from "../comment_replies.js";
+import { parseReplies, applyReplies, repliesPath, listening } from "../comment_replies.js";
 import { pickTarget, agentMessage, claudePrompt } from "../comment_prompt.js";
 import { parseShared, parseRequest, requestToApply, threadsKey } from "../comment_share.js";
 import { TOGGLE_TTL_MS } from "../review_pane.js";
@@ -37,6 +37,8 @@ const all = applyReplies(once.threads, replies);
 assert.equal(lastOf(all.threads[0]).a, "Because tests.\n\nAlso y.", "a thread can get several replies, and a reply from another terminal is ignored");
 assert.equal(applyReplies(all.threads, replies).changed, false, "reading the same file again adds nothing twice");
 assert.equal(applyReplies([t0], replies).threads[0].exchanges[0].a, "", "a thread answered by claude takes no agent replies");
+assert.ok(listening(once.threads), "keeps reading replies after the first answer, since an agent may send several");
+assert.equal(listening([t0]), false, "a thread answered by claude needs no replies file");
 assert.equal(repliesPath("/s"), "/s/herdr-review/replies.jsonl", "replies live under the state folder");
 
 const live = { address: "t7", state: "live", status: "working", name: "fixer", title: "claude", cwd: "/repo/wt", labels: { "claude.session": "s1" } };

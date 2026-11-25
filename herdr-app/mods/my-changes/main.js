@@ -10,6 +10,7 @@ import { isReviewPane, followedTerminal, paneLocation, paneShown, openReviewPane
 import { paneView, syncPane } from "./review_pane_view.js";
 import { CommentStore } from "./comment_store.js";
 import { deliverer, pollReplies } from "./comment_send.js";
+import { listening } from "./comment_replies.js";
 import { commentLayout, blockView } from "./comment_view.js";
 import { openComposer, closeComposer, clickBlock, submitComposer, composerBar } from "./comment_actions.js";
 
@@ -174,7 +175,7 @@ export default class Changes extends View {
     cx.timer.every(3000, (cx) => this.pollComments(cx));
     cx.spawn(async (cx) => { for (;;) { this.command(await nextCommand(), cx); cx.notify(); } });
     // The chat runs tests too; watch for its runs while it answers.
-    cx.timer.every(3000, (cx) => { if (this.root && (this.testsRunning() || this.chat.messages.some((m) => m.status === "pending"))) this.loadTests(cx); });
+    cx.timer.every(3000, (cx) => { if (this.root && (this.testsRunning() || this.chat.messages.some((m) => m.status === "pending") || this.comments.anyWaiting())) this.loadTests(cx); });
   }
 
   // `herdr-app do my-changes.<command>`, and what a key binding can send: range:work, range:commit, range:branch, next, prev, mark, open:<path>
@@ -294,9 +295,9 @@ export default class Changes extends View {
 
   publishComments() { publishThreads(this); }
 
-  // Answers agents sent back with hreview, read only while a thread waits on an agent.
+  // Answers agents sent back with hreview, read while a thread's newest comment went to an agent.
   pollComments(cx) {
-    if (this.pollingComments || !this.comments.anyWaiting()) return;
+    if (this.pollingComments || !listening(this.comments.threads)) return;
     this.pollingComments = true;
     cx.spawn(async (cx) => {
       try { if (await pollReplies(this.comments, this.on ?? null)) { publishThreads(this); cx.notify(); } }
