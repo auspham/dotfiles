@@ -22,9 +22,12 @@ export const EFFORTS = [
   { id: "max", label: "Max" },
 ];
 
+/** What a space with nothing saved gets; the role hook and hcoord's picked() keep the same defaults in bash. */
+const DEFAULTS = { enabled: true, model: "claude-sonnet-5-5", effort: "medium" };
+
 const allowed = (options, id) => (options.some((o) => o.id === id) ? id : "");
 
-/** The settings stored in the file's text. Anything unreadable means every space is off. */
+/** The settings stored in the file's text. Anything unreadable means no space has saved settings. */
 export function parseSettings(text) {
   try {
     const spaces = JSON.parse(text)?.spaces;
@@ -34,10 +37,10 @@ export function parseSettings(text) {
   }
 }
 
-/** One space's settings; a space nobody has switched on is off. */
+/** One space's settings; a key nobody saved takes its default, while a saved off or "" (Default) is kept. */
 export function settingsFor(spaces, spaceId) {
-  const found = spaces[spaceId];
-  return { enabled: found?.enabled === true, model: allowed(MODELS, found?.model), effort: allowed(EFFORTS, found?.effort) };
+  const found = { ...DEFAULTS, ...spaces[spaceId] };
+  return { enabled: found.enabled === true, model: allowed(MODELS, found.model), effort: allowed(EFFORTS, found.effort) };
 }
 
 /** The file's new text after changing one space's settings. */
