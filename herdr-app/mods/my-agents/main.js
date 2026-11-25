@@ -7,6 +7,7 @@ import { agents, appHome, readTextFile, nextCommand, terminals, panes, focused, 
 import { ARCHIVE_FILE, parseArchived, splitArchived } from "./archive.js";
 import { archivedSection } from "./archive_view.js";
 import { parentOf, isLent, displayName, lentNote } from "./parents.js";
+import { reviewState } from "./review.js";
 
 function find(node, id) {
   if (node?.id === id) return node;
@@ -53,12 +54,13 @@ function title(tab, l) {
   const telling = live && live !== (l?.terminal ?? l?.address) && live !== prog && !path && !live.includes("@") && live.toLowerCase() !== l?.program?.key;
   return (tab.name === prog || !tab.named) && telling ? live : tab.name;
 }
-const RANK = { blocked: 4, done: 3, working: 2, idle: 1 };
+// Waiting on the user's review needs them as much as blocked does.
+const RANK = { blocked: 4, review: 4, done: 3, working: 2, idle: 1 };
 // A sub-agent without a pane isn't in agents(): its raw word, error counting as
 // blocked. It's never done: it reports to its parent, and the parent's done is the news.
 const kidStatus = (k, listed) => {
   const s = listed.get(k.address) ?? k.status;
-  return s === "error" ? "blocked" : s === "done" ? "idle" : s;
+  return reviewState(k, s === "error" ? "blocked" : s === "done" ? "idle" : s);
 };
 const SORTS = [
   { id: "priority", label: "Priority", icon: "clock" },
@@ -280,7 +282,7 @@ export default class Agents extends View {
 
   // Tree view: the state as a word beside its marker, so it reads without learning the icons.
   statusLabeled(t, a) {
-    if (a.status === "blocked") return this.status(t, a);
+    if (a.status === "blocked" || a.status === "review") return this.status(t, a);
     const color = a.status === "idle" ? t.dim : t[a.status];
     return h_flex().flex_none().gap(5).items_center()
       .child(div().text_size(11).text_color(color).when(a.status !== "idle", (el) => el.font_medium()).child(a.status))
@@ -293,6 +295,7 @@ export default class Agents extends View {
     if (a.status === "working") return svg("mods/workspace-chrome/spinner.svg").size(12).mx(1).flex_none().text_color(t.working).spin(900);
     if (a.status === "blocked" && compact) return div().size(14).flex_none().rounded(4).bg(t.blocked + "26").text_size(10.5).font_bold().text_color(t.blocked).flex().items_center().justify_center().child("!");
     if (a.status === "blocked") return div().flex_none().px(6).h(18).rounded(5).bg(t.blocked + "26").text_size(10.5).font_semibold().text_color(t.blocked).flex().items_center().child("Needs you");
+    if (a.status === "review") return div().flex_none().px(6).h(18).rounded(5).bg(t.blocked + "26").text_size(10.5).font_semibold().text_color(t.blocked).flex().items_center().child("Review");
     // Idle: a ring; done: a dot.
     if (a.status === "idle") return div().size(7).mx(3).flex_none().rounded(4).border(1.5).border_color(t.idle ?? t.dim);
     return div().size(7).mx(3).flex_none().rounded(4).bg(a.status === "done" ? color : t.dim + "00");
@@ -318,6 +321,8 @@ export default class Agents extends View {
     const all = terminals();
     this.migratePins(all);
     const roles = new Map(all.map((x) => [x.address, x.labels?.role]));
+    const byAddr = new Map(all.map((x) => [x.address, x]));
+    const own = (a) => reviewState(byAddr.get(a.address), a.status);
     const shown = focused()?.agent;
     const now = Date.now();
     this.track(list, now);
@@ -329,7 +334,7 @@ export default class Agents extends View {
     for (const a of list) tabCounts.set(a.tab, (tabCounts.get(a.tab) ?? 0) + 1);
     const byPriority = sort.id === "priority";
     const asTree = sort.id === "tree";
-    const urgency = new Map(list.map((a) => [a.address, Math.max(this.rank(a), ...this.tree(all, a.address).map((s) => RANK[kidStatus(s.t, this.listed)] ?? 0))]));
+    const urgency = new Map(list.map((a) => [a.address, Math.max(RANK[own(a)] ?? 0, ...this.tree(all, a.address).map((s) => RANK[kidStatus(s.t, this.listed)] ?? 0))]));
     const rankOf = (a) => urgency.get(a.address);
     if (byPriority) list = [...list].sort((x, y) => rankOf(y) - rankOf(x) || this.since(y) - this.since(x) || y.seq - x.seq);
     const pinned = list.filter((a) => a.pinned);
@@ -374,7 +379,7 @@ export default class Agents extends View {
         .items_center()
         .rounded(4)
         .text_size(11)
-        .text_color(open ? t.dim : (t[top] ?? t.dim))
+        .text_color(open ? t.dim : (t[top === "review" ? "blocked" : top] ?? t.dim))
         .cursor_pointer()
         .hover((s) => s.bg(t.hover).text_color(t.foreground))
         .on_click((_e, cx) => {
@@ -425,7 +430,7 @@ export default class Agents extends View {
           .child(h_flex().w(14).flex_none().items_center().justify_center().child(this.status(t, a, true)));
       }
       const when = this.since(a);
-      const shownAs = asTree && rankOf(a) === RANK.blocked ? { ...a, status: "blocked" } : a;
+      const shownAs = asTree && own(a) === "review" ? { ...a, status: "review" } : asTree && rankOf(a) === RANK.blocked ? { ...a, status: "blocked" } : a;
       const idle = a.status === "idle" && !a.focused;
       const isPinned = a.pinned;
       const pin = div()
