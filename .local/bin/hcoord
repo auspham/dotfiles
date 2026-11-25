@@ -16,6 +16,7 @@ me="${HC_TERMINAL_ID:-}"
 [ -n "$me" ] || die "run this from the coordinator's own herdr terminal"
 
 . "$(dirname "${BASH_SOURCE[0]}")/hcoord-ledger.sh"
+. "$(dirname "${BASH_SOURCE[0]}")/hcoord-adopt.sh"
 
 children() { hc ls --json --label role=child --label "coord=$me" | jq -r '.terminals[].address'; }
 label_of() { hc get "$1" --json | jq -r --arg k "$2" '.labels[$k] // empty'; }
@@ -143,31 +144,6 @@ cmd_kill() {
     echo "removed the worktree; branch agent/$name is kept"
   fi
   ledger_add kill "$name" "{\"worktree_removed\": $remove}"
-}
-
-cmd_adopt() {
-  local from="" src own line name worktree repo branch base terminal coord space t detail stat sep=$'\x1f'
-  case "${1:-}" in --from) from="${2:?space id}" ;; "") ;; *) die "unknown option $1" ;; esac
-  src=$(ledger_file "$from"); own=$(ledger_file)
-  while IFS= read -r line <&3; do
-    IFS="$sep" read -r name worktree repo branch base terminal coord space < <(jq -r '[.name, .worktree, .repo, .branch, .base, .terminal, .coord, .space] | map(. // "") | join("\u001f")' <<<"$line")
-    if [ "$src" != "$own" ] && [ -z "$(ledger_events "$own" | jq -c --arg n "$name" 'select(.name == $n)')" ]; then
-      mkdir -p "$(dirname "$own")"; ledger_events "$src" | jq -c --arg n "$name" 'select(.name == $n)' >> "$own"
-    fi
-    t=$(hc ls --json --label "task=$name" --label "worktree=$worktree" </dev/null | jq -r '.terminals[0].address // empty')
-    if [ -z "$t" ]; then
-      if git -C "$repo" worktree list --porcelain 2>/dev/null | grep -qxF "worktree $worktree"; then
-        stat=$(shortstat "$worktree" "$base"); detail="branch $branch, ${stat:-no changes}"
-      else detail="branch $branch, worktree missing"; fi
-      echo "orphaned $name $worktree ($detail)"
-      continue
-    fi
-    if [ "$(label_of "$t" coord)" != "$me" ]; then
-      hc label "$t" "coord=$me" >/dev/null
-      ledger_add adopt "$name" "$(jq -cn --arg terminal "$t" --arg from_coord "$coord" --arg from_space "$space" '{terminal: $terminal, from_coord: $from_coord, from_space: $from_space}')"
-    fi
-    echo "adopted $name $t"
-  done 3< <(ledger_events "$src" | jq -sc 'reduce .[] as $e ({}; .[$e.name] = (if $e.event == "spawn" then $e else (.[$e.name] // {}) + $e end)) | .[] | select(.event != "kill" and .worktree != null)')
 }
 
 case "${1:-}" in
