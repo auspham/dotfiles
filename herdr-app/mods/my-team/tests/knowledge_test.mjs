@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { capNotes, foldLedger, ledgerSummary, spaceDir } from "../knowledge.js";
+import { capNotes, controllerText, foldLedger, ledgerSummary, spaceDir } from "../knowledge.js";
 
 const line = (o) => JSON.stringify({ at: "2026-01-01T00:00:00Z", coord: "c", space: "s", ...o });
 const ledger = [
@@ -31,6 +31,22 @@ const later = foldLedger(`${ledger}\n${line({ event: "adopt", name: "a", termina
 assert.equal(later.find((c) => c.name === "a").verdict, "approved", "a review verdict survives a later event");
 const respawned = foldLedger(`${ledger}\n${line({ event: "spawn", name: "b", task: "again" })}`);
 assert.equal(respawned.find((c) => c.name === "b").killed, false, "a respawned child is no longer killed");
+
+const control = (...events) => foldLedger(events.map((e) => line({ name: "k", ...e })).join("\n"))[0];
+const spawned = control({ event: "spawn", coord: "t1" });
+assert.deepEqual([spawned.controller, spawned.owner], ["t1", ""], "a spawned child is controlled by the coordinator that spawned it");
+const lent = control({ event: "spawn", coord: "t1" }, { event: "lend", coord: "t1", to: "t2", from: "t1" });
+assert.deepEqual([lent.controller, lent.owner], ["t2", "t1"], "a lent child is controlled by the borrower and owned by the lender");
+const kept = control({ event: "spawn", coord: "t1" }, { event: "lend", coord: "t1", to: "t2", from: "t1" }, { event: "review", coord: "t2", verdict: "approved" });
+assert.deepEqual([kept.controller, kept.owner], ["t2", "t1"], "a review does not change who controls a lent child");
+const returned = control({ event: "spawn", coord: "t1" }, { event: "lend", coord: "t1", to: "t2", from: "t1" }, { event: "return", coord: "t2", to: "t1", from: "t2" });
+assert.deepEqual([returned.controller, returned.owner], ["t1", ""], "a returned child goes back to its owner and is no longer lent");
+const adopted = control({ event: "spawn", coord: "t1" }, { event: "lend", coord: "t1", to: "t2", from: "t1" }, { event: "adopt", coord: "t3" });
+assert.deepEqual([adopted.controller, adopted.owner], ["t3", ""], "an adopt after a lend gives the child to the adopter and clears the owner");
+const again = control({ event: "spawn", coord: "t1" }, { event: "lend", coord: "t1", to: "t2", from: "t1" }, { event: "spawn", coord: "t4" });
+assert.deepEqual([again.controller, again.owner], ["t4", ""], "a respawned child starts with its new coordinator");
+assert.equal(controllerText(spawned), "coord t1", "the knowledge view names a child's controller");
+assert.equal(controllerText(lent), "coord t2, lent by t1", "and its lender while it is lent");
 
 assert.equal(ledgerSummary(folded), "3 children, 1 killed", "the summary counts children and killed");
 assert.equal(ledgerSummary(foldLedger(line({ event: "spawn", name: "a" }))), "1 child");

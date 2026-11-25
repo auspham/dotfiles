@@ -2,7 +2,7 @@
 
 import { div } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
-import { ledgerSummary } from "./knowledge.js";
+import { controllerText, ledgerSummary } from "./knowledge.js";
 
 const firstLine = (text) => text.split("\n")[0];
 
@@ -11,6 +11,7 @@ function childRow(t, c) {
   return v_flex().id(`knowledge-${c.name}`).w_full().min_w(0).gap(1).text_size(11.5)
     .child(h_flex().gap(8).items_center()
       .child(div().flex_1().min_w(0).truncate().font_semibold().text_color(t.foreground).child(c.name))
+      .when(c.controller !== "", (e) => e.child(div().flex_none().text_size(10.5).text_color(t.dim).tooltip("The coordinator that controls this child now").child(controllerText(c))))
       .when(c.verdict !== "", (e) => e.child(div().flex_none().text_size(10.5).text_color(tone).tooltip(c.note || c.verdict).child(c.verdict)))
       .child(div().flex_none().text_size(10.5).text_color(c.killed ? t.blocked : t.dim).child(c.event)))
     .when(c.branch !== "", (e) => e.child(div().min_w(0).truncate().text_size(11).text_color(t.dim).child(c.branch)))
