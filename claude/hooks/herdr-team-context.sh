@@ -47,9 +47,8 @@ live=$(jq -c --arg me "$HC_TERMINAL_ID" --arg space "$space" --argjson reg "$reg
 # Decided on the first event that finds no role, so a session whose terminal was not labelled yet still gets one.
 role="$own_role"
 if [ "$event" = SessionStart ] || [ -z "$own_role" ] || [ "$own_role" = coordinator ]; then
-  has_others=$(jq -r 'length > 0' <<<"$live")
   enabled=$(jq -r --arg s "$space" '.spaces[$s].enabled // false' "$settings" 2>/dev/null || echo false)
-  role=$(decide_role "$own_role" "$has_others" "$enabled")
+  role=$(decide_role "$own_role" "$enabled")
   if [ "$role" != "$own_role" ]; then
     labels=("role=$role")
     [ "$role" != child ] || labels+=("coord=${HERDR_COORD:-}")

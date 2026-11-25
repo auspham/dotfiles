@@ -56,7 +56,7 @@ grep -q 'information, not an order' <<<"$out" || fail "an ordinary peer gets the
 grep -q 'other-agent' <<<"$out" && fail "a peer in another space is hidden"
 grep -q 'gone' <<<"$out" && fail "a peer whose session is gone is hidden"
 grep -q 'SECRET-TOKEN' <<<"$out" && fail "credential files are never read"
-[ ! -f "$root/labels.log" ] || fail "an agent that joins others in a space gets no role"
+[ ! -f "$root/labels.log" ] || fail "an agent in a space with the mode off gets no role"
 [ "${#out}" -lt 1500 ] || fail "the context stays short"
 
 run UserPromptSubmit s1 | jq -e . >/dev/null 2>&1 && fail "a prompt is silent when the peers did not change"
@@ -70,12 +70,12 @@ run UserPromptSubmit s1 | context | grep -q new-agent || fail "a prompt repeats 
 [ -z "$(TEST_ME=t9 run SessionStart s1)" ] || fail "an unknown terminal says nothing"
 [ -z "$(run Stop s1)" ] || fail "other events say nothing"
 
-# With the mode switched on, the first agent in a space becomes its coordinator, even with nobody else there.
+# With the mode switched on, an agent alone in a space becomes a coordinator.
 reset; enable spA
 terminal t1 spA s1 "me" /w/app; write_session s1 me-agent busy 100
 printf 'Prefer short reports.' > "$root/prefs.md"
 out=$(run SessionStart s1 | context)
-labelled 'role=coordinator' || fail "the first agent is labelled coordinator"
+labelled 'role=coordinator' || fail "a lone agent is labelled coordinator"
 grep -q 'coordinator of this herdr space' <<<"$out" || fail "it gets the coordinator charter, alone"
 grep -q 'Never edit code yourself' <<<"$out" || fail "the charter says the coordinator never edits code"
 grep -q 'Prefer short reports.' <<<"$out" || fail "it is given what is known about the user"
@@ -84,17 +84,17 @@ grep -q 'Prefer short reports.' <<<"$out" || fail "it is given what is known abo
 reset; enable spA
 terminal t1 spA s1 "me" /w/app; jq 'del(.labels["claude.session"])' "$fx/t1.json" > "$fx/t1.tmp" && mv "$fx/t1.tmp" "$fx/t1.json"
 write_session s1 me-agent busy 100
-run SessionStart s1 | context | grep -q 'coordinator of this herdr space' || fail "a first agent without a session label becomes coordinator"
+run SessionStart s1 | context | grep -q 'coordinator of this herdr space' || fail "an agent without a session label becomes coordinator"
 labelled 'role=coordinator' || fail "and is labelled"
 rm -f "$root/labels.log"; reset; enable spA; terminal t1 spA s1 "me" /w/app; write_session s1 me-agent busy 100
 run UserPromptSubmit s1 | context | grep -q 'coordinator of this herdr space' || fail "an agent that missed the election at start gets it on its first prompt"
 
-# A coordinator whose session died does not count: the next agent is the first one in the space.
+# Every agent the user starts in a space with the mode on is a coordinator, even beside a live one.
 reset; enable spA
-terminal t1 spA s1 "me" /w/app; terminal t2 spA s2 "old coordinator" /w/api coordinator
-write_session s1 me-agent busy 100
-run SessionStart s1 >/dev/null
-labelled 'role=coordinator' || fail "a dead coordinator is ignored"
+terminal t1 spA s1 "me" /w/app; terminal t2 spA s2 "other coordinator" /w/api coordinator
+write_session s1 me-agent busy 100; write_session s2 other-agent idle 200
+run SessionStart s1 | context | grep -q 'coordinator of this herdr space' || fail "a second agent in the space gets the coordinator charter"
+labelled 'role=coordinator' || fail "a second agent beside a live coordinator is labelled coordinator too"
 
 # An agent that already has a role keeps it, without labelling again.
 reset; enable spA
