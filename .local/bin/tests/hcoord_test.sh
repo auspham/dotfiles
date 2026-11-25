@@ -99,7 +99,7 @@ long=$(printf 'n%.0s' $(seq 1 300))
 run review login-fix pending "$long"
 [ "$(event review login-fix | jq -r '.note | length')" = 300 ] || fail "review keeps a note longer than 200 characters"
 [ "$(event review login-fix | jq -r .verdict)" = pending ] || fail "review records the verdict"
-run review login-fix reviewing
+run review login-fix reviewing 2>/dev/null || fail "review works without a note"
 [ "$(jq -r '.labels.review' "$fx/$terminal.json")" = reviewing ] && [ "$(event review login-fix | jq -r .verdict)" = reviewing ] || fail "review accepts reviewing while the coordinator looks"
 run review login-fix maybe 2>/dev/null && fail "review states are checked"
 

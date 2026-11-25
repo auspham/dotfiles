@@ -98,9 +98,9 @@ cmd_diff() {
 }
 
 cmd_review() {
-  local t; t=$(child_of "${1:?name}")
+  local t note="${3:-}"; t=$(child_of "${1:?name}")
   case "${2:-}" in approved | changes | pending | reviewing | yours) ;; *) die "review is approved, changes, pending, reviewing or yours" ;; esac
-  hc label "$t" "review=$2" "review_note=${3:0:200}" >/dev/null
+  hc label "$t" "review=$2" "review_note=${note:0:200}" >/dev/null
   ledger_add review "$1" "$(jq -cn --arg verdict "$2" --arg note "${3:-}" '{verdict: $verdict, note: $note}')"
 }
 
