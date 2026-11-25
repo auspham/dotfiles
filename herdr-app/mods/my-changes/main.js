@@ -7,7 +7,7 @@ import { GuideSource } from "./guide_view.js";
 import { LEVELS, LEVEL_LABEL, VERDICT_SCHEMA, pathFlags, diffFlags, isTest, isCode, testsChangedCode, levelOf, splitDiff, triagePrompt } from "./triage.js";
 import { followFocus } from "./review_pane.js";
 import { isReviewPane, followedTerminal, paneLocation, paneShown, openReviewPane, publishReview, requestToggle, takeToggle } from "./review_link.js";
-import { paneView } from "./review_pane_view.js";
+import { paneView, syncPane } from "./review_pane_view.js";
 
 let lastLocation = null;
 function location() {
@@ -157,8 +157,8 @@ export default class Changes extends View {
     this.flags = new Map(); this.verdicts = {}; this.triaging = false; this.guide = new GuideSource();
     this.sel = null; this.chat = { session: null, messages: [] }; this.hasQuestion = false; this.threadScroll = ScrollHandle.new(); this.scrollThreads = false; this.threadH = clamp(Number(this.read("threadH")) || 240, 90, 900); this.areaH = 700; this.vdrag = null;
     this.listH = Number(this.read("listH")) || 0; this.listSeen = 200; this.panelH = 800; this.ldrag = null; // listH 0: as tall as its rows
-    // The review pane copy draws what the side panel publishes; it reads no git state of its own.
-    if (isReviewPane()) return;
+    // The review pane copy draws what the side panel publishes, taken in by a timer since render must not change state; it reads no git state of its own.
+    if (isReviewPane()) { cx.timer.every(250, (cx) => syncPane(this, key(), cx)); return; }
     this.refresh(cx);
     cx.timer.every(10000, (cx) => this.refresh(cx));
     cx.timer.every(400, (cx) => { this.applyFocus(cx); const path = takeToggle(this); if (path) this.toggleReviewed(path, cx, true); });
@@ -1032,7 +1032,7 @@ export default class Changes extends View {
 
   render(cx) {
     if (props()?.menu) return this.menuView(theme());
-    if (isReviewPane()) return paneView(this, key(), cx);
+    if (isReviewPane()) return paneView(this);
     if (key() !== this.context) this.refresh(cx);
     const t = theme(), add = this.files.reduce((n, f) => n + f.add, 0), del = this.files.reduce((n, f) => n + f.del, 0);
     const openFile = this.files.find((f) => f.path === this.open), banner = openFile ? this.whyBanner(openFile, t) : null;

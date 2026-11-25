@@ -6,20 +6,20 @@ import { theme } from "herdr";
 import { reviewChange } from "./review_pane.js";
 import { paneRecord } from "./review_link.js";
 
-/** Takes in the panel's newest record: opens the file afresh, reloads an edited one in place, or only redraws the marks. @param {any} host the pane's Changes view @param {string} context its location key @param {any} cx */
-function sync(host, context, cx) {
+/** Takes in the panel's newest record: opens the file afresh, reloads an edited one in place, or only redraws the marks. Runs from a timer, never from render, since it changes state and notifies. @param {any} host the pane's Changes view @param {string} context its location key @param {any} cx */
+export function syncPane(host, context, cx) {
   const record = paneRecord(), change = record ? reviewChange(host.record ?? null, record) : null;
   if (!change) return;
   host.record = record;
+  cx.notify();
   if (change === "marks") return;
   Object.assign(host, { context, root: record.root, on: record.on, against: record.against, hasHead: record.hasHead, files: [{ ...record.file }] });
   if (change === "open") { host.pick(record.file.path, cx, true); return; }
   cx.spawn(async (cx) => { try { await host.load(record.file.path, context); } catch (e) { host.note = `Cannot preview this diff: ${e}`; } cx.notify(); });
 }
 
-/** Draws the review pane for the Changes view `host`. @param {any} host @param {string} context @param {any} cx */
-export function paneView(host, context, cx) {
-  sync(host, context, cx);
+/** Draws the review pane for the Changes view `host`; syncPane keeps it current. @param {any} host */
+export function paneView(host) {
   const t = theme(), file = host.files[0] ?? null, splitting = host.mode === "split";
   const box = v_flex().id("review-pane").size_full().min_h(0).overflow_hidden().bg(t.background).text_color(t.foreground).text_size(13);
   if (!file) return box.child(div().p(16).text_color(t.dim).child("Click a file in the Changes panel to review it here"));
