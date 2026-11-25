@@ -2,8 +2,8 @@
 
 import { div } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
-import { readTextFile, terminals, focused, exec } from "herdr";
-import { guidePath, parseGuide, headMoved, guideEntry, guideStats, canFinish, notifyTarget, shouldFinish } from "./guide.js";
+import { readTextFile, terminals, focused, exec, run, notify } from "herdr";
+import { guidePath, parseGuide, headMoved, guideEntry, guideStats, canFinish, notifyTarget, shouldFinish, finishOutcome } from "./guide.js";
 
 /** The guide in force for the Changes root, re-read when its file changes. */
 export class GuideSource {
@@ -29,7 +29,7 @@ export class GuideSource {
     return guideBanner(t, this.guide, branch ? guideStats(items) : null, { label: `Show since ${host.base?.name ?? "base"}`, run: (_e, cx) => host.setRange("branch", cx) }, { note: this.note, busy: this.busy, run: (_e, cx) => this.finish(host, cx) });
   }
 
-  /** Marks the focused child reviewed, reloads, then tells its coordinator without blocking. @param {any} host the Changes view @param {any} cx */
+  /** Marks the focused child reviewed and tells its coordinator, then takes the user back to that coordinator with a toast. @param {any} host the Changes view @param {any} cx */
   finish(host, cx) {
     const labels = terminals().find((x) => x.address === this.address)?.labels;
     if (!shouldFinish(labels, this.busy)) return;
@@ -38,11 +38,13 @@ export class GuideSource {
     cx.spawn(async (cx) => {
       try {
         const done = await exec("hc", ["label", this.address, "review=reviewed", "review_note=Reviewed by you"]).catch(() => null);
-        this.note = done?.code === 0 ? "" : "Could not mark it reviewed";
-        if (done?.code !== 0) { cx.notify(); return; }
-        host.refresh(cx);
-        const sent = target ? await exec("hc", ["send", target.coord, target.text]).catch(() => null) : null;
-        if (sent?.code !== 0) { this.note = "Marked reviewed; could not tell the coordinator"; cx.notify(); }
+        const sent = done?.code === 0 && target ? await exec("hc", ["send", target.coord, target.text]).catch(() => null) : null;
+        const out = finishOutcome(done?.code === 0, sent?.code === 0, target?.task ?? null);
+        // One GuideSource serves every child, so a jump clears the note rather than carry it to the next one.
+        this.note = out.note;
+        if (done?.code === 0) host.refresh(cx);
+        if (out.jump) run("agent.focus", { terminal: target.coord });
+        if (out.toast) notify(out.toast);
       } finally { this.busy = false; cx.notify(); }
     });
   }

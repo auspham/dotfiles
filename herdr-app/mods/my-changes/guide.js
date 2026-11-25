@@ -82,5 +82,17 @@ const TERMINAL_ADDRESS = /^t[0-9a-z]{1,8}$/;
 export function notifyTarget(labels) {
   const coord = labels?.coord, task = text(labels?.task, 80);
   if (typeof coord !== "string" || !TERMINAL_ADDRESS.test(coord) || !task) return null;
-  return { coord, text: `[Changes tab] The user finished reviewing ${task} (clicked Done reviewing). Ask them before merging or closing it.` };
+  return { coord, task, text: `[Changes tab] The user finished reviewing ${task} (clicked Done reviewing). Ask them before merging or closing it.` };
+}
+
+/** @typedef {{ jump: boolean, note: string, toast: { title: string, level: "success" | "warning" } | null }} FinishOutcome */
+
+/** What the user sees after a Done reviewing click. With a coordinator to tell (`task` set), they go back to it and get a toast; without one they stay and see a note. @param {boolean} labelOk @param {boolean} sentOk @param {string | null} task the sanitized task, null without a usable coord @returns {FinishOutcome} */
+export function finishOutcome(labelOk, sentOk, task) {
+  if (!labelOk) return { jump: false, note: "Could not mark it reviewed", toast: null };
+  if (!task) return { jump: false, note: "Marked reviewed; could not tell the coordinator", toast: null };
+  const toast = sentOk
+    ? { title: `Marked ${task} reviewed. Told its coordinator.`, level: "success" }
+    : { title: `Marked ${task} reviewed. Could not tell its coordinator.`, level: "warning" };
+  return { jump: true, note: "", toast };
 }

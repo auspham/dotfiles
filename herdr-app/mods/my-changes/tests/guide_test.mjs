@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { validateGuide, parseGuide, guideEntry, guideStats, canFinish, headMoved, guidePath, notifyTarget, shouldFinish, CHANGED, NOT_IN_GUIDE } from "../guide.js";
+import { validateGuide, parseGuide, guideEntry, guideStats, canFinish, headMoved, guidePath, notifyTarget, shouldFinish, finishOutcome, CHANGED, NOT_IN_GUIDE } from "../guide.js";
 import { levelOf } from "../triage.js";
 
 const HEAD = "a".repeat(40);
@@ -48,7 +48,7 @@ assert.equal(canFinish({ needYou: 0, done: 0 }), true, "with nothing to look clo
 assert.equal(guidePath({ review: "reviewed", guide: "/g.json" }), null, "a reviewed child shows no banner");
 
 const labels = { coord: "t2b", task: "login" };
-assert.deepEqual(notifyTarget(labels), { coord: "t2b", text: "[Changes tab] The user finished reviewing login (clicked Done reviewing). Ask them before merging or closing it." }, "the coordinator is told when the user finishes a review");
+assert.deepEqual(notifyTarget(labels), { coord: "t2b", task: "login", text: "[Changes tab] The user finished reviewing login (clicked Done reviewing). Ask them before merging or closing it." }, "the coordinator is told when the user finishes a review");
 assert.equal(notifyTarget({ task: "login" }), null, "no coordinator label means no message");
 assert.equal(notifyTarget({ coord: "t2b" }), null, "no task label means no message");
 assert.equal(notifyTarget(undefined), null);
@@ -57,5 +57,10 @@ for (const coord of ["--force", "t2b --force", "", "../x", "t2b\nx"]) assert.equ
 assert.equal(shouldFinish({ review: "yours" }, false), true, "a first click finishes");
 assert.equal(shouldFinish({ review: "yours" }, true), false, "a second click while finishing sends nothing");
 assert.equal(shouldFinish({ review: "reviewed" }, false), false, "an already reviewed child is not announced again");
+
+assert.deepEqual(finishOutcome(true, true, "login"), { jump: true, note: "", toast: { title: "Marked login reviewed. Told its coordinator.", level: "success" } }, "a finished review goes back to the coordinator with a confirmation");
+assert.deepEqual(finishOutcome(true, false, "login"), { jump: true, note: "", toast: { title: "Marked login reviewed. Could not tell its coordinator.", level: "warning" } }, "the toast says so when the coordinator could not be told");
+assert.deepEqual(finishOutcome(false, false, "login"), { jump: false, note: "Could not mark it reviewed", toast: null }, "a failed label keeps the user on the child with a note");
+assert.deepEqual(finishOutcome(true, false, null), { jump: false, note: "Marked reviewed; could not tell the coordinator", toast: null }, "without a usable coord the user stays on the child and sees the note");
 
 console.log("my-changes guide: all checks passed");
