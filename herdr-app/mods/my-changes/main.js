@@ -394,21 +394,27 @@ export default class Changes extends View {
     this.saveChat(); cx.notify();
     cx.spawn(async (cx) => {
       try {
-        const system = await this.preamble();
-        const send = (session) => exec("claude", ["-p", "--output-format", "json", "--allowedTools", `${ASK_TOOLS},Bash(${testScript()} run:*)`, "--add-dir", `${home()}/.claude/projects`, "--append-system-prompt", system, ...(model !== "default" ? ["--model", model] : []), ...(effort !== "default" ? ["--effort", effort] : []), ...(session ? ["--resume", session] : []), "--", prompt], { cwd: root, on, timeout: 600000 });
         if (this.chat.role !== ASK_ROLE) this.chat.session = null;
-        let r = await send(this.chat.session);
-        if (r.code !== 0 && this.chat.session) { this.chat.session = null; r = await send(null); }
-        if (!r.stdout.trim()) throw new Error(r.stderr.trim() || "No answer came back.");
-        const out = JSON.parse(r.stdout);
-        if (r.code !== 0 || out.is_error) throw new Error(String(out.result || r.stderr || "The question failed."));
-        this.chat.session = out.session_id ?? this.chat.session;
+        const out = await this.askClaude(prompt, { root, on, model, effort, session: this.chat.session, onRetry: () => { this.chat.session = null; } });
+        this.chat.session = out.session ?? this.chat.session;
         this.chat.role = ASK_ROLE;
-        message.a = String(out.result ?? "").trim() || "No answer came back.";
+        message.a = out.text;
         message.status = "done";
       } catch (e) { message.status = "error"; message.a = String(e.message ?? e); }
       this.scrollThreads = true; this.saveChat(); cx.notify();
     });
+  }
+
+  /** Sends one prompt to claude -p, resuming `session` when given (or forking it with `fork`), and starting afresh (after calling `onRetry`) when the resume fails. Resolves to the answer and the new session id; rejects with the error to show. */
+  async askClaude(prompt, { root, on, model, effort, session, fork = false, onRetry }) {
+    const system = await this.preamble();
+    const send = (resume) => exec("claude", ["-p", "--output-format", "json", "--allowedTools", `${ASK_TOOLS},Bash(${testScript()} run:*)`, "--add-dir", `${home()}/.claude/projects`, "--append-system-prompt", system, ...(model !== "default" ? ["--model", model] : []), ...(effort !== "default" ? ["--effort", effort] : []), ...(resume ? ["--resume", resume, ...(fork ? ["--fork-session"] : [])] : []), "--", prompt], { cwd: root, on, timeout: 600000 });
+    let r = await send(session);
+    if (r.code !== 0 && session) { onRetry?.(); r = await send(null); }
+    if (!r.stdout.trim()) throw new Error(r.stderr.trim() || "No answer came back.");
+    const out = JSON.parse(r.stdout);
+    if (r.code !== 0 || out.is_error) throw new Error(String(out.result || r.stderr || "The question failed."));
+    return { text: String(out.result ?? "").trim() || "No answer came back.", session: out.session_id ?? null };
   }
 
   // One exchange, read like a chat: the question is a right-aligned bubble, the answer sits under the assistant's name beside a rail.
