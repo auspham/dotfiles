@@ -1,6 +1,6 @@
-// Draws a thread card from its model, at the heights comment_card.js counts. Drawn inside the virtual list's renderer, so nothing here has handlers: the whole card is one click target.
+// Draws a thread card from its model, at the heights comment_card.js counts. Drawn inside the virtual list's renderer, so nothing here has handlers: an open card is two list items, its header (which folds the thread) and its body (which opens it), and a marker is one.
 
-import { div } from "gpui-kit";
+import { div, svg } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
 import { PX, postHeight, ago } from "./comment_card.js";
 import { COMMENT_FONT, BODY_PX } from "./comment_font.js";
@@ -46,13 +46,18 @@ const footView = (t, text, resolvable) => h_flex().h(PX.foot).flex_none().px(PX.
   .child(div().flex_1().min_w(0).h(30).px(10).flex().items_center().rounded(6).border_1().border_color(t.border).bg(t.background).text_color(t.muted).truncate().child(text))
   .when(resolvable, (e) => e.child(div().flex_none().text_size(12).text_color(t.muted).child("Resolve")));
 
-/** A thread card, or its one-line marker, filling the box it is given. @param {Card | { marker: string }} c @param {object} t theme @param {{ now: number, open: boolean }} env open: the bar is on this thread */
-export function cardView(c, t, { now, open }) {
-  const box = v_flex().size_full().rounded(6).border_1().border_color(open ? t.accent : t.border).bg(t.raised).overflow_hidden().font_family(SANS).text_size(13).text_color(t.foreground);
-  if ("marker" in c) return box.child(div().h(PX.marker).px(PX.padX).flex().items_center().text_size(12).text_color(t.muted).truncate().child(c.marker));
-  return box
-    .child(h_flex().h(PX.head).flex_none().px(PX.padX).gap(8).items_center().border_b_1().border_color(t.border)
-      .child(div().flex_1().min_w(0).truncate().text_size(12).font_medium().text_color(t.muted).child(c.head)).child(chipView(t, c.chip)))
+/** @param {object} t @param {"down" | "right"} dir */
+const chevron = (t, dir) => svg(`mods/workspace-chrome/chevron-${dir}.svg`).size(11).flex_none().text_color(t.muted);
+
+/** One piece of a thread card, filling the box it is given: the header, the posts and footer under it, or the one-line marker. @param {Card | { marker: string }} c @param {object} t theme @param {{ now: number, open: boolean, part: "head" | "body" | "marker", folded: boolean }} env open: the bar is on this thread; folded: the marker unfolds the thread on click, so it shows the chevron */
+export function cardView(c, t, { now, open, part, folded }) {
+  const box = v_flex().size_full().border_color(open ? t.accent : t.border).bg(t.raised).overflow_hidden().font_family(SANS).text_size(13).text_color(t.foreground);
+  if ("marker" in c) return box.rounded(6).border_1().child(h_flex().h(PX.marker).px(PX.padX).gap(8).items_center().text_size(12).text_color(t.muted)
+    .when(folded, (e) => e.child(chevron(t, "right"))).child(div().flex_1().min_w(0).truncate().child(c.marker)));
+  if (part === "head") return box.rounded_t(6).border_t_1().border_x_1()
+    .child(h_flex().h(PX.head).flex_none().px(PX.padX).gap(8).items_center().border_b_1().border_color(t.border).child(chevron(t, "down"))
+      .child(div().flex_1().min_w(0).truncate().text_size(12).font_medium().text_color(t.muted).child(c.head)).child(chipView(t, c.chip)));
+  return box.rounded_b(6).border_b_1().border_x_1()
     .children(c.posts.map((post, i) => postView(t, { post, first: i === 0, now })))
     .child(footView(t, c.foot, c.chip.tone !== "queued" && c.chip.tone !== "waiting"));
 }

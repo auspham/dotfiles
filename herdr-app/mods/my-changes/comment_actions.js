@@ -1,7 +1,7 @@
 // What the comment bar and the inline cards do: open the bar on a thread or new lines, queue what is typed, act on a thread, and send the queue.
 
 import { makeAnchor, toUnified } from "./comment_anchor.js";
-import { commentKey } from "./comment_view.js";
+import { blockClick } from "./comment_layout.js";
 import { lastOf } from "./comment_threads.js";
 import { writeMode } from "./comment_bar.js";
 
@@ -25,14 +25,15 @@ export function openComposer(host, cx) {
 /** @param {any} host @param {any} cx */
 export function closeComposer(host, cx) { host.composer = null; setInput(host, ""); host.handle.focus(); cx.notify(); }
 
-/** A click on an inline block: the Comment row opens the bar, a thread opens it for that thread. True when the key was a block's. @param {any} host @param {string} key @param {any} cx */
+/** A click on an inline block: the Comment row opens the bar, a card's header or collapsed marker folds or unfolds the thread and leaves the bar as it is, and the rest of a thread opens it in the bar. True when the key was a block's. @param {any} host @param {string} key @param {any} cx */
 export function clickBlock(host, key, cx) {
-  const hit = commentKey(key);
+  const hit = blockClick(key);
   if (!hit) return false;
-  if (hit === "add") { openComposer(host, cx); return true; }
-  host.composer = { mode: "thread", id: hit };
+  if (hit.op === "add") { openComposer(host, cx); return true; }
+  if (hit.op === "fold") { host.comments.toggle(hit.id); cx.notify(); return true; }
+  host.composer = { mode: "thread", id: hit.id };
   setInput(host, "");
-  if (writeMode(host.composer, host.comments.find(hit) ?? null)) host.commentInput.focus();
+  if (writeMode(host.composer, host.comments.find(hit.id) ?? null)) host.commentInput.focus();
   cx.notify();
   return true;
 }

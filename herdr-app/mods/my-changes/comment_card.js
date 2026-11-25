@@ -73,6 +73,9 @@ export function cardHeight(c) {
   return 2 * PX.margin + PX.border + inner;
 }
 
+/** The height of an open card's header item in the list: its top margin, top border and header row. The body item takes the rest of cardHeight. */
+export const HEAD_H = PX.margin + PX.border / 2 + PX.head;
+
 /** "just now", "5m ago", "3h ago" or "2d ago". @param {number} at @param {number} now */
 export function ago(at, now) {
   const m = Math.floor((now - at) / 60000);

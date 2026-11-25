@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { layoutItems, placeThreads, drawnPx } from "../comment_layout.js";
+import { layoutItems, placeThreads, drawnPx, threadBlocks, blockClick, ADD_KEY } from "../comment_layout.js";
 import { wrapSpans, textPx } from "../comment_wrap.js";
 import { threadCard, cardHeight, cardWidth, postHeight, headLabel, ago, PX, FOLD_LINES } from "../comment_card.js";
 import { newThread, patchLast, addReply, setResolved } from "../comment_threads.js";
@@ -63,6 +63,16 @@ const { items, heights } = layoutItems(3, 20, [{ after: 1, key: "b", h: 70 }, { 
 assert.deepEqual(items.map((i) => ("row" in i ? i.row : i.block.key)), ["top", 0, 1, "b", 2], "places blocks under their rows and outdated ones at the top");
 assert.deepEqual(heights, [30, 20, 20, 70, 20], "gives each item its own height for the virtual list");
 assert.deepEqual(layoutItems(2, [40, 20], []).heights, [40, 20], "keeps split rows' wrapped heights");
+
+const parts = threadBlocks(t, card(t), 3), clickOn = (b) => blockClick(`unified${b.key}`);
+assert.deepEqual(parts.map(clickOn), [{ op: "fold", id: t.id }, { op: "open", id: t.id }], "clicking a card's chevron collapses it instead of opening it, and the rest of the card still opens it");
+assert.equal(parts.reduce((h, b) => h + b.h, 0), cardHeight(card(t)), "an open card's header and body add up to its full height, so rows below do not shift");
+assert.deepEqual(parts.map((b) => b.after), [3, 3], "both halves of a card sit under the same row");
+assert.deepEqual(threadBlocks(t, card(t, { ...open, collapsed: true }), 3).map(clickOn), [{ op: "fold", id: t.id }], "clicking a collapsed thread's marker expands it");
+const done = { ...t, resolved: true };
+assert.deepEqual(threadBlocks(done, threadCard(done, 600, { ...open, collapsed: true }), 3).map(clickOn), [{ op: "open", id: t.id }], "a resolved thread's marker still opens it in the bar, even when it is also collapsed");
+assert.deepEqual([blockClick(`split${ADD_KEY}`), blockClick("unified12")], [{ op: "add" }, null], "the Comment row opens the composer and a diff row is no block");
+assert.ok(parts.every((b) => !/\d$/.test(b.key)), "a block key never ends in a digit, which pickRow reads as a row index");
 
 const ctx = (n, text) => ({ kind: " ", old: n, number: n, text });
 const rows = [{ kind: "@", text: "@@" }, ctx(1, "a"), { kind: "-", number: 2, text: "old" }, { kind: "+", number: 2, text: "let x = 2" }, ctx(3, "b")];
