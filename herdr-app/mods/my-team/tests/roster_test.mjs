@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { chattyPairs, feedCount, firstLine, messageFeed, messageKey, readTail, toolSummary } from "../feed.js";
 import { childSummary, displayName, resolveTarget, parseSessions, spaceName, teamCards } from "../roster.js";
-import { MODELS, labelChanges, parseSettings, pickCoordinator, settingsFor, withSetting } from "../settings.js";
+import { MODELS, labelChanges, parseSettings, settingsFor, withSetting } from "../settings.js";
 
 const term = (address, space, session, over = {}) => ({
   address, agent: "claude-code", status: "idle", state: "live", turn: 3, title: `title ${address}`,
@@ -96,15 +96,12 @@ assert.deepEqual(settingsFor(parseSettings(effortful), "spA"), { enabled: true, 
 assert.equal(settingsFor({ spA: { effort: "turbo" } }, "spA").effort, "", "an unknown effort is ignored");
 assert.equal(settingsFor({ spA: { enabled: true, model: "gpt" } }, "spA").model, "", "an unknown model is ignored");
 assert.ok(MODELS.every((m) => typeof m.label === "string"));
-assert.equal(pickCoordinator([{ address: "t1" }, { address: "t2" }], "t2").address, "t2", "the focused agent leads");
-assert.equal(pickCoordinator([{ address: "t1" }, { address: "t2" }], "t9").address, "t1", "else the first");
-assert.equal(pickCoordinator([], "t1"), null);
 
 const trio = [{ address: "t1", role: "" }, { address: "t2", role: "" }];
-assert.deepEqual(labelChanges(trio, true, "t2"), [["t2", "role=coordinator"]], "switching on picks the focused agent");
-assert.deepEqual(labelChanges([{ address: "t1", role: "coordinator" }, trio[1]], true, "t2"), [], "an existing coordinator is kept");
-assert.deepEqual(labelChanges([{ address: "t1", role: "coordinator" }, { address: "t2", role: "child" }, trio[0]], false, "t1"), [["t1", "role="], ["t1", "coord="], ["t2", "role="], ["t2", "coord="]], "switching off clears every role");
-assert.deepEqual(labelChanges([], true, "t1"), [], "nobody to lead, nothing to label");
+assert.deepEqual(labelChanges(trio, true), [["t1", "role=coordinator"], ["t2", "role=coordinator"]], "switching on makes every agent without a role a coordinator");
+assert.deepEqual(labelChanges([{ address: "t1", role: "coordinator" }, { address: "t3", role: "child" }, trio[1]], true), [["t2", "role=coordinator"]], "switching on keeps existing coordinators and children as they are");
+assert.deepEqual(labelChanges([{ address: "t1", role: "coordinator" }, { address: "t2", role: "child" }, trio[0]], false), [["t1", "role="], ["t1", "coord="], ["t2", "role="], ["t2", "coord="]], "switching off clears every role");
+assert.deepEqual(labelChanges([], true), [], "nobody to lead, nothing to label");
 
 const withSocket = parseSessions([JSON.stringify({ sessionId: "s7", name: "api-agent", messagingSocketPath: "/run/user/1000/cc-socks/42.sock" })]);
 assert.equal(resolveTarget("uds:/run/user/1000/cc-socks/42.sock", withSocket), "api-agent", "a socket address becomes the session's name");

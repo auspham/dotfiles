@@ -79,10 +79,10 @@ export default class Team extends View {
     return readSettings().then((fresh) => writeSettings(withSetting(fresh, spaceId, patch)));
   }
 
-  // The hook and hcoord read the file; the role label on the leading agent is what the panel and sidebar show.
+  // The hook and hcoord read the file; the role labels on the agents are what the panel and sidebar show.
   async setCoordinatorMode(spaceId, on, cx) {
     await this.save(spaceId, { enabled: on }, cx);
-    await applyLabels(labelChanges(this.cards, on, focused()?.terminal));
+    await applyLabels(labelChanges(this.cards, on));
   }
 
   async transcriptOf(session) {

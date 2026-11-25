@@ -46,15 +46,8 @@ export function withSetting(spaces, spaceId, patch) {
   return JSON.stringify({ spaces: next }, null, 2) + "\n";
 }
 
-/** The agent that becomes coordinator when the mode is switched on: the focused one if it is in the space, else the first. */
-export function pickCoordinator(cards, focusedAddress) {
-  return cards.find((c) => c.address === focusedAddress) ?? cards[0] ?? null;
-}
-
-/** The label changes for switching the mode: on gives the role to one agent (unless one has it), off takes it from all. */
-export function labelChanges(cards, on, focusedAddress) {
+/** The label changes for switching the mode: on makes every agent without a role a coordinator, off clears every role. */
+export function labelChanges(cards, on) {
   if (!on) return cards.filter((c) => c.role).flatMap((c) => [[c.address, "role="], [c.address, "coord="]]);
-  if (cards.some((c) => c.role === "coordinator")) return [];
-  const lead = pickCoordinator(cards.filter((c) => !c.role), focusedAddress);
-  return lead ? [[lead.address, "role=coordinator"]] : [];
+  return cards.filter((c) => !c.role).map((c) => [c.address, "role=coordinator"]);
 }
