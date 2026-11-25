@@ -253,9 +253,11 @@ export default class Agents extends View {
     const st = kidStatus(k, this.listed);
     const pic = icon(k.program, 14, t.foreground);
     const on = k.address === shown;
+    // 14 puts the elbow under the middle of the parent's icon (row px 8 + half of the 14px icon).
+    const SUB_INDENT = 14;
     return h_flex()
       .id(`sub-${k.address}`)
-      .pl(39)
+      .pl(SUB_INDENT)
       .pr(8)
       .rounded(8)
       .h(26)
@@ -266,7 +268,8 @@ export default class Agents extends View {
       .when(on, (el) => el.bg(t.raised))
       .hover((s) => s.bg(t.hover))
       .on_click(() => (this.listed.has(k.address) ? run("pane.focus", { terminal: k.address }) : this.peek(k.address)))
-      .children(s.lines.map(l => div().self_start().mt(-4).w(9).h(17).mr(4).flex_none()
+      // A lead column is 20 wide (elbow 13 + half an icon), so a deeper elbow sits under its own parent's icon too.
+      .children(s.lines.map((l, i) => div().self_start().mt(-4).w(i < s.lines.length - 1 ? 16 : 9).h(17).mr(4).flex_none()
         .when(Boolean(l), el => el.border_l(1.5).border_color(t.input))
         .when(l === "└" || l === "├", el => el.border_b(1.5).rounded_bl(6))))
       .when(Boolean(pic), el => el.child(div().mr(8).child(pic)))
