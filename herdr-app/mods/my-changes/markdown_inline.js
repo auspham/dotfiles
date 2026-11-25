@@ -35,3 +35,6 @@ export function parseInline(line, style = {}) {
   }
   return out;
 }
+
+/** A line with its markers taken out, for one-line summaries. @param {string} line */
+export const plainText = (line) => parseInline(line).map((sp) => sp.s).join("");

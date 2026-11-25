@@ -2,6 +2,8 @@
 
 import { waiting, isDraft } from "./comment_threads.js";
 import { threadChip, agentName } from "./comment_status.js";
+import { parseBlocks } from "./markdown_blocks.js";
+import { plainText } from "./markdown_inline.js";
 import { markdownRows, contentRows, firstRows, rowsHeight, MD } from "./comment_rows.js";
 
 /** @typedef {import("./comment_threads.js").Thread} Thread */
@@ -57,7 +59,7 @@ export function threadCard(t, cardW, s) {
 
 /** @param {Thread} t */
 function markerText(t) {
-  const first = t.exchanges[0].q.split("\n")[0], answers = t.exchanges.filter((e) => e.status === "done").length;
+  const first = plainText(parseBlocks(t.exchanges[0].q)[0]?.lines[0] ?? ""), answers = t.exchanges.filter((e) => e.status === "done").length;
   if (t.resolved) return `Resolved · ${headLabel(t.anchor)} · ${first}`;
   return `${headLabel(t.anchor)} · ${answers} repl${answers === 1 ? "y" : "ies"} · ${first}`;
 }
