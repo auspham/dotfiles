@@ -260,4 +260,19 @@ TEST_ME=c1 run lend mine --to c2 && TEST_ME=c1 run return mine || fail "the owne
 [ "$(jq -r '.labels.coord + "|" + (.labels.owner // "")' "$fx/$mine_t.json")" = "c1|" ] || fail "taking a child back makes the owner its coordinator again"
 [ "$(event return mine "$spm" | jq -r '.to + "|" + .from + "|" + .coord')" = "c1|c2|c1" ] || fail "a take-back is recorded from the borrower"
 
+# adopt in the caller's own space takes only children whose controller is gone.
+printf '{"address":"c5","labels":{"herdr.space":"spM","role":"coordinator"}}' > "$fx/c5.json"
+TEST_ME=c1 run spawn kept "Kept" >/dev/null
+TEST_ME=c1 run lend mine --to c2
+rm "$fx/c2.json"
+taken=$(TEST_ME=c5 run adopt)
+grep -q '^adopted theirs ' <<<"$taken" || { echo "$taken" >&2; fail "adopt takes a child whose coordinator is gone"; }
+grep -q '^adopted mine ' <<<"$taken" || fail "adopt takes a lent child whose borrower is gone"
+[ "$(event adopt mine "$spm" | jq -r .from_coord)" = c2 ] || fail "adopt records the child's controller, not the last actor"
+grep -qxF 'skipped kept (controlled by c1)' <<<"$taken" || fail "adopt skips a child a live coordinator still controls"
+[ "$(jq -r .labels.coord "$fx/$(event spawn kept "$spm" | jq -r .terminal).json")" = c1 ] || fail "a skipped child keeps its coordinator"
+mine_again=$(TEST_ME=c1 run adopt)
+grep -qxF 'skipped mine (controlled by c5)' <<<"$mine_again" || { echo "$mine_again" >&2; fail "an adopt after a lend decides the controller by event order"; }
+grep -q '^adopted kept ' <<<"$mine_again" || fail "adopt still reports the caller's own children"
+
 echo "hcoord: all checks passed"

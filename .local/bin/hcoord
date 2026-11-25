@@ -7,7 +7,7 @@
 #   hcoord handoff <name> [--summary TEXT]   (stdin: one "high|normal|skim<TAB>path<TAB>reason" per file; hands the committed work to the user)
 #   hcoord kill <name> [--worktree] [--force]
 #   hcoord lend <name> --to <terminal>   hcoord return <name>   (lend a child to another coordinator in the space; the borrower or the lender returns it)
-#   hcoord adopt [--from <space-id>]   (take over the children recorded in a space's ledger, or report them orphaned)
+#   hcoord adopt [--from <space-id>]   (take over the children recorded in a space's ledger, or report them orphaned; without --from it skips children a live coordinator controls)
 # review, handoff, kill and lend act only on a child whose coord is the caller; a child name is unique across the space.
 # spawn, review, handoff, kill, lend and return also append to $COORDINATOR_HOME/spaces/<space>/ledger.jsonl (default ~/.claude/coordinator), the record a new coordinator adopts from.
 set -euo pipefail
