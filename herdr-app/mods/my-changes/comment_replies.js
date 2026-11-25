@@ -1,6 +1,6 @@
 // Answers agents send back with `hreview reply <id> <text>`, one JSON line each, and how they join their threads. Pure: no herdr imports, so node can test it.
 
-import { lastOf } from "./comment_threads.js";
+import { isDraft } from "./comment_threads.js";
 
 /** @typedef {import("./comment_threads.js").Thread} Thread */
 /** @typedef {{ id: string, text: string, from: string }} Reply */
@@ -20,6 +20,9 @@ export function parseReplies(text) {
   return out;
 }
 
+/** The index of the exchange an agent's reply answers: the newest one sent, since an unsent draft after it has gone nowhere yet. @param {Thread} t */
+const answeredAt = (t) => t.exchanges.length - (isDraft(t) ? 2 : 1);
+
 /** Joins new replies to the threads they answer, after the thread's `heard` count. Only the agent the newest comment was sent to is heard: a reply from another terminal is passed over. @param {Thread[]} threads @param {Reply[]} replies @returns {{ threads: Thread[], changed: boolean }} */
 export function applyReplies(threads, replies) {
   let changed = false;
@@ -27,13 +30,13 @@ export function applyReplies(threads, replies) {
     const all = replies.filter((r) => r.id === t.id);
     if (all.length <= t.heard) return t;
     changed = true;
-    const last = lastOf(t), fresh = all.slice(t.heard).filter((r) => r.from === last.to?.address).map((r) => r.text);
+    const at = answeredAt(t), last = t.exchanges[at], fresh = all.slice(t.heard).filter((r) => r.from === last?.to?.address).map((r) => r.text);
     if (!fresh.length) return { ...t, heard: all.length };
     const a = [last.status === "done" ? last.a : "", ...fresh].filter(Boolean).join("\n\n");
-    return { ...t, heard: all.length, exchanges: [...t.exchanges.slice(0, -1), { ...last, a, status: "done" }] };
+    return { ...t, heard: all.length, exchanges: t.exchanges.map((e, i) => (i === at ? { ...last, a, status: "done" } : e)) };
   });
   return { threads: next, changed };
 }
 
-/** Whether to keep reading the replies file: some thread's newest comment went to an agent, which may answer more than once. @param {Thread[]} threads */
-export const listening = (threads) => threads.some((t) => Boolean(lastOf(t).to));
+/** Whether to keep reading the replies file: some thread's newest sent comment went to an agent, which may answer more than once. @param {Thread[]} threads */
+export const listening = (threads) => threads.some((t) => Boolean(t.exchanges[answeredAt(t)]?.to));

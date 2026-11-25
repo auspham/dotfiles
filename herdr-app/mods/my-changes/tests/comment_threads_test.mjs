@@ -50,6 +50,14 @@ assert.equal(applyReplies(all.threads, replies).changed, false, "reading the sam
 assert.equal(applyReplies([t0], replies).threads[0].exchanges[0].a, "", "a thread answered by claude takes no agent replies");
 assert.ok(listening(once.threads), "keeps reading replies after the first answer, since an agent may send several");
 assert.equal(listening([t0]), false, "a thread answered by claude needs no replies file");
+const followUp = addReply(all.threads, t0.id, "Then fix it?", 4000);
+const late = parseReplies([lines, JSON.stringify({ id: "cabc123", text: "Committed abc.", from: "t7", at: 5 })].join("\n"));
+const heard = applyReplies(followUp, late).threads[0];
+assert.equal(heard.exchanges[0].a, "Because tests.\n\nAlso y.\n\nCommitted abc.", "a late reply joins the comment it answers, not a newer unsent draft");
+assert.deepEqual([lastOf(heard).status, lastOf(heard).a], ["draft", ""], "an unsent draft never takes an answer");
+assert.ok(listening(followUp), "keeps reading replies to a sent comment while a follow-up is only a draft");
+const sentFollowUp = patchLast([heard], t0.id, { status: "sent", to: agent });
+assert.equal(applyReplies(sentFollowUp, late).changed, false, "replies already heard do not answer the follow-up once it is sent");
 assert.equal(repliesPath("/s"), "/s/herdr-review/replies.jsonl", "replies live under the state folder");
 
 const live = { address: "t7", state: "live", status: "working", name: "fixer", title: "claude", cwd: "/repo/wt", labels: { "claude.session": "s1" } };
