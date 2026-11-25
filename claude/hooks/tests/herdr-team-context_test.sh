@@ -148,7 +148,9 @@ this line is damaged {
 {"at":"12","event":"spawn","name":"readopted","coord":"t2","space":"spA","space_name":"alpha"}
 {"at":"13","event":"lend","name":"readopted","coord":"t2","to":"t3","from":"t2","space":"spA","space_name":"alpha"}
 {"at":"14","event":"adopt","name":"readopted","coord":"t1","space":"spA","space_name":"alpha"}
+{"at":"15","event":"spawn","name":"orphan-child","coord":"t9","space":"spA","space_name":"alpha"}
 LEDGER
+terminal t2 spA s2 "sibling" /w/app coordinator; write_session s2 sibling-agent idle 200
 out=$(run SessionStart s1 | context)
 grep -q 'alpha-child' <<<"$out" || fail "a coordinator is told about its unadopted children in the ledger"
 grep -q 'hcoord ls, then hcoord adopt' <<<"$out" || fail "and told to list then adopt them"
@@ -158,6 +160,10 @@ grep -q 'lent-in' <<<"$out" || fail "a child lent to the reader is listed"
 grep -q 'lent-out' <<<"$out" && fail "a child the reader lent out is not listed"
 grep -q 'came-back' <<<"$out" || fail "a child returned to the reader is listed"
 grep -q 'readopted' <<<"$out" || fail "an adopt after a lend makes the adopter the controller"
+grep -q 'Children whose coordinator is gone: orphan-child\. hcoord adopt takes them' <<<"$out" || fail "a child of a dead coordinator is named as one to adopt"
+grep -q 'your children not killed:.*orphan-child' <<<"$out" && fail "a child of a dead coordinator is not called the reader's"
+rm "$fx/t2.json"
+grep -q 'coordinator is gone: lent-out, orphan-child, their-child\.' <<<"$(run SessionStart s1 | context)" || fail "a coordinator back on a new terminal is told the old children to adopt"
 
 reset; enable spB
 terminal t1 spB s1 "me" /w/app; write_session s1 me-agent busy 100
