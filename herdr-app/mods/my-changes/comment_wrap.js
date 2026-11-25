@@ -65,6 +65,3 @@ export function wrapSpans(spans, width, size = BODY_PX) {
   }
   return [...out, merge(line)];
 }
-
-/** Word-wraps plain text, one line per newline. @param {string} text @param {number} width @returns {TextLine[]} */
-export const wrapPx = (text, width) => text.split("\n").flatMap((l) => wrapSpans([{ s: l }], width));

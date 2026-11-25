@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { layoutItems, placeThreads } from "../comment_layout.js";
-import { wrapPx, textPx } from "../comment_wrap.js";
+import { wrapSpans, textPx } from "../comment_wrap.js";
 import { threadCard, cardHeight, cardWidth, postHeight, headLabel, ago, PX, FOLD_LINES } from "../comment_card.js";
 import { newThread, patchLast, addReply, setResolved } from "../comment_threads.js";
 import { threadChip, taskNames } from "../comment_status.js";
@@ -8,10 +8,11 @@ import { writeMode, queueLabel, barTitle, queuedText, barShows } from "../commen
 import { splitSources } from "../comment_anchor.js";
 
 const text = (rows) => prose(rows.filter((r) => r.kind === "text").map((r) => r.spans));
+const wrapPx = (s, w) => wrapSpans([{ s }], w);
 const prose = (lines) => lines.map((l) => l.map((sp) => sp.s).join(""));
 assert.deepEqual(prose(wrapPx("one two three four", 90)), ["one two", "three four"], "wraps at word breaks by estimated width");
 assert.ok(wrapPx("x".repeat(200), 100).length > 1, "breaks a word wider than the line");
-assert.deepEqual(prose(wrapPx("a\n\nb", 200)), ["a", "", "b"], "keeps the answer's blank lines");
+assert.deepEqual(wrapPx("", 200), [[]], "an empty line stays one empty line");
 assert.equal(textPx("WWWW"), textPx("iiii"), "every character takes one advance in the monospace comment font");
 assert.equal(textPx("界"), 2 * textPx("a"), "a glyph past Latin-1 counts two cells, since its fallback font may draw it wide");
 // Fira Code at 13px in a screenshot of a farewell answer: this 74-character line's ink spans 589px over 73 advances, so one advance is at most 589 / 73 px.
