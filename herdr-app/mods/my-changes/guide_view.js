@@ -43,7 +43,8 @@ export class GuideSource {
         const out = finishOutcome(done?.code === 0, sent?.code === 0, target?.task ?? null);
         // One GuideSource serves every child, so a jump clears the note rather than carry it to the next one.
         this.note = out.note;
-        if (done?.code === 0) host.refresh(cx);
+        // A refresh racing the jump could fill the coordinator's pane with this child's files, hiding its list.
+        if (done?.code === 0 && !out.jump) host.refresh(cx);
         if (out.jump) run("agent.focus", { terminal: target.coord });
         if (out.toast) notify(out.toast);
       } finally { this.busy = false; cx.notify(); }
