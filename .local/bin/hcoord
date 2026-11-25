@@ -24,11 +24,15 @@ me="${HC_TERMINAL_ID:-}"
 children() { hc ls --json --label role=child --label "coord=$me" | jq -r '.terminals[].address'; }
 label_of() { hc get "$1" --json | jq -r --arg k "$2" '.labels[$k] // empty'; }
 
-# What the user picked in the Team panel for this space (model or effort), empty for Claude's own default.
+# What a space with nothing saved runs children on; the Team panel's settings.js and the role hook keep the same defaults.
+declare -A PICK_DEFAULTS=([model]=claude-sonnet-5-5 [effort]=medium)
+
+# What the user picked in the Team panel for this space (model or effort); a saved "" means Claude's own default.
 picked() {
-  local space file="${HERDR_TEAM_SETTINGS:-$HOME/.config/herdr-team/coordinator.json}"
+  local space file="${HERDR_TEAM_SETTINGS:-$HOME/.config/herdr-team/coordinator.json}" fallback="${PICK_DEFAULTS[$1]}"
   space=$(hc get "$me" --json 2>/dev/null | jq -r '.labels["herdr.space"] // empty' 2>/dev/null || true)
-  jq -r --arg s "$space" --arg k "$1" '.spaces[$s][$k] // empty' "$file" 2>/dev/null || true
+  # has(), not //, so a saved "" (Default) is kept rather than replaced by the fallback.
+  jq -r --arg s "$space" --arg k "$1" --arg d "$fallback" '(.spaces[$s] // {}) | if has($k) then (.[$k] // "") else $d end' "$file" 2>/dev/null || echo "$fallback"
 }
 
 # The terminal of the child with this task name, whichever coordinator controls it.

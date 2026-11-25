@@ -197,6 +197,14 @@ calls | grep -q '"--model","opus","--effort","high"' || fail "an explicit model 
 : > "$root/calls.log"
 HERDR_TEAM_SETTINGS="$root/settings.json" run spawn lowest "Task" --effort low >/dev/null
 calls | grep -q '"--effort","low"' || fail "an explicit effort wins"
+: > "$root/calls.log"
+HERDR_TEAM_SETTINGS="$root/none.json" run spawn fresh "Task" >/dev/null
+calls | grep -q '"--model","claude-sonnet-5-5","--effort","medium"' || fail "a space with no entry runs children on sonnet and medium"
+printf '{"spaces":{"spZ":{"enabled":true,"model":""}}}' > "$root/settings.json"
+: > "$root/calls.log"
+HERDR_TEAM_SETTINGS="$root/settings.json" run spawn plain "Task" >/dev/null
+calls | grep -q '"--model"' && fail "an explicit Default model stays Default"
+calls | grep -q '"--effort","medium"' || fail "a missing effort takes its default beside an explicit Default model"
 
 # The child is told its coordinator's name, from the session registry.
 mkdir -p "$root/sessions"
