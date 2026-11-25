@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { newThread, addReply, patchLast, setResolved, removeThread, lastOf, waiting, settleAfterReload, parseThreads, threadId } from "../comment_threads.js";
 import { parseReplies, applyReplies, repliesPath, listening } from "../comment_replies.js";
-import { pickTarget, agentMessage, claudePrompt } from "../comment_prompt.js";
+import { pickTarget, commentNote, commentPath, agentLine, claudePrompt } from "../comment_prompt.js";
 import { parseShared, parseRequest, requestToApply, threadsKey } from "../comment_share.js";
 import { TOGGLE_TTL_MS } from "../review_pane.js";
 
@@ -46,8 +46,15 @@ assert.deepEqual(pickTarget(live, "/repo/wt"), { kind: "agent", address: "t7", n
 assert.deepEqual(pickTarget({ ...live, state: "exited" }, "/repo/wt"), { kind: "claude", session: "s1" }, "a gone agent's session is forked by claude -p");
 assert.deepEqual(pickTarget({ ...live, cwd: "/elsewhere" }, "/repo/wt"), { kind: "claude", session: "s1" }, "an agent in another folder does not own the view");
 assert.deepEqual(pickTarget(null, "/repo"), { kind: "claude", session: null }, "without a terminal, claude -p answers afresh");
-assert.match(agentMessage(replied), /hreview reply cabc123 /, "the agent is told how to answer this thread");
-assert.match(agentMessage(replied), /Earlier in this thread:\nComment: Why 2\?/, "a follow-up carries the thread's earlier exchanges");
+const note = "/s/herdr-review/comments/cabc123.md";
+assert.equal(commentPath("/s", "cabc123"), note, "each thread's comment is written to its own file under the state folder");
+const line = agentLine(replied, note);
+assert.ok(!/[\r\n]/.test(line), "the text typed into the agent is one line, since each newline would press Enter");
+assert.match(line, /^\[Review comment cabc123\] Read \/s\/herdr-review\/comments\/cabc123\.md, /, "the typed line points the agent at the comment file");
+assert.match(line, /hreview reply cabc123 "<your answer>"/, "the agent is told how to answer this thread");
+assert.match(commentNote(replied), /src\/a\.js, line 3:\n```diff\n\+    3 \| let x = 2/, "the comment file quotes the anchored lines");
+assert.match(commentNote(replied), /Earlier in this thread:\nComment: Why 2\?/, "a follow-up's file carries the thread's earlier exchanges");
+assert.match(commentNote(replied), /Follow-up: And y\?$/, "the comment file ends with the newest comment");
 assert.match(claudePrompt(t0), /src\/a\.js, line 3:\n```diff\n\+    3 \| let x = 2/, "the prompt quotes the anchored lines");
 
 assert.equal(threadsKey("A"), "review.threads.A", "each tab has its own threads key");
