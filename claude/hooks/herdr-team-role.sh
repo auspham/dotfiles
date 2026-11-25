@@ -1,8 +1,8 @@
 # Sourced by herdr-team-context.sh: which role an agent has in its herdr space, and the words for each role.
 
 # Echoes the role: child (launched by a coordinator), coordinator (any other agent in a space with the mode on),
-# or nothing (a peer). $1 the role label this terminal already has, $2 true when the user switched coordinator
-# mode on for this space (it is off until they do).
+# or nothing (a peer). $1 the role label this terminal already has, $2 true when coordinator
+# mode is on for this space (it is on unless the user switched it off).
 decide_role() {
   if [ "${HERDR_COORDINATOR:-}" = off ]; then return 0; fi
   if [ "${HERDR_ROLE:-}" = child ]; then echo child; return 0; fi

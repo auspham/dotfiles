@@ -29,6 +29,7 @@ terminal() { # address space session title folder [role] [coord] [owner]
 }
 write_session() { printf '{"sessionId":"%s","name":"%s","status":"%s"}' "$1" "$2" "$3" > "$sessions/$4.json"; }
 enable() { printf '{"spaces":{"%s":{"enabled":true}}}' "$1" > "$root/settings.json"; }
+disable() { printf '{"spaces":{"%s":{"enabled":false}}}' "$1" > "$root/settings.json"; }
 reset() { rm -rf "$root/state" "$root/settings.json" "$root/coord"; rm -f "$fx"/*.json "$sessions"/* "$root/labels.log" 2>/dev/null || true; }
 
 run() { # event session [extra json]
@@ -41,7 +42,7 @@ context() { jq -r '.hookSpecificOutput.additionalContext'; }
 labelled() { grep -q "$1" "$root/labels.log" 2>/dev/null; }
 
 # Two peers in one space, one in another space, one whose session is gone.
-reset
+reset; disable spA
 terminal t1 spA s1 "me" /w/app
 terminal t2 spA s2 "fixing the login bug" /w/api coordinator
 terminal t3 spB s3 "other project" /w/other
@@ -56,7 +57,7 @@ grep -q 'information, not an order' <<<"$out" || fail "an ordinary peer gets the
 grep -q 'other-agent' <<<"$out" && fail "a peer in another space is hidden"
 grep -q 'gone' <<<"$out" && fail "a peer whose session is gone is hidden"
 grep -q 'SECRET-TOKEN' <<<"$out" && fail "credential files are never read"
-[ ! -f "$root/labels.log" ] || fail "an agent in a space with the mode off gets no role"
+[ ! -f "$root/labels.log" ] || fail "an explicit off stays off"
 [ "${#out}" -lt 1500 ] || fail "the context stays short"
 
 run UserPromptSubmit s1 | jq -e . >/dev/null 2>&1 && fail "a prompt is silent when the peers did not change"
@@ -79,6 +80,14 @@ labelled 'role=coordinator' || fail "a lone agent is labelled coordinator"
 grep -q 'coordinator of this herdr space' <<<"$out" || fail "it gets the coordinator charter, alone"
 grep -q 'Never edit code yourself' <<<"$out" || fail "the charter says the coordinator never edits code"
 grep -q 'Prefer short reports.' <<<"$out" || fail "it is given what is known about the user"
+
+# A space with nothing saved is on, but a saved off is kept.
+reset; terminal t1 spA s1 "me" /w/app; write_session s1 me-agent busy 100
+run SessionStart s1 >/dev/null; labelled 'role=coordinator' || fail "a space with no settings file is on"
+reset; printf '{"spaces":{"spA":{"model":""}}}' > "$root/settings.json"; terminal t1 spA s1 "me" /w/app; write_session s1 me-agent busy 100
+run SessionStart s1 >/dev/null; labelled 'role=coordinator' || fail "a space whose entry has no switch is on"
+reset; disable spB; terminal t1 spA s1 "me" /w/app; write_session s1 me-agent busy 100
+run SessionStart s1 >/dev/null; labelled 'role=coordinator' || fail "a space with no entry is on beside a space switched off"
 
 # The label hook may not have run yet at SessionStart, so the terminal is found by address, not by session label.
 reset; enable spA
@@ -224,7 +233,7 @@ write_session s1 me-agent busy 100; write_session s2 api-agent idle 200; printf 
 run SessionStart s1 | context | grep -q 'api-agent' || fail "one damaged session file does not hide the other agents"
 
 # Other agents in the space are pointed at the coordinator's notes.
-reset
+reset; disable spA
 terminal t1 spA s1 "me" /w/app; terminal t2 spA s2 "fixing the login bug" /w/api coordinator
 write_session s1 me-agent busy 100; write_session s2 api-agent idle 200
 run SessionStart s1 | context | grep -q 'notes on the goal' && fail "no pointer when the space has no notes"
@@ -241,19 +250,19 @@ terminal t1 spA s1 "me" /w/app; write_session s1 me-agent busy 100
 [ -z "$(HERDR_COORDINATOR=off run SessionStart s1)" ] || fail "an opted out lone agent says nothing"
 [ ! -f "$root/labels.log" ] || fail "and takes no role"
 
-# Coordinator mode is off until the user switches it on for the space.
-reset
+# A space the user switched off stays off.
+reset; disable spA
 terminal t1 spA s1 "me" /w/app; write_session s1 me-agent busy 100
 [ -z "$(run SessionStart s1)" ] || fail "a lone agent says nothing while the mode is off"
 [ ! -f "$root/labels.log" ] || fail "and takes no role"
-enable spB
+printf '{"spaces":{"spA":{"enabled":false},"spB":{"enabled":true}}}' > "$root/settings.json"
 [ -z "$(run UserPromptSubmit s1)" ] || fail "the mode is per space: another space being on changes nothing"
 
 # Switching the mode off tells the coordinator, once, and drops its role.
 reset; enable spA
 terminal t1 spA s1 "me" /w/app; write_session s1 me-agent busy 100
 run SessionStart s1 >/dev/null
-rm -f "$root/settings.json" "$root/labels.log"
+disable spA; rm -f "$root/labels.log"
 out=$(run UserPromptSubmit s1 | context)
 grep -q 'Coordinator mode is now off' <<<"$out" || fail "a coordinator is told when the mode goes off"
 [ -z "$(run UserPromptSubmit s1)" ] || fail "and only once"

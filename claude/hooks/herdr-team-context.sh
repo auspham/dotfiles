@@ -22,6 +22,8 @@ state_dir="${XDG_STATE_HOME:-$HOME/.local/state}/herdr-team"
 preferences="${COORDINATOR_PREFERENCES:-$HOME/.claude/coordinator/preferences.md}"
 # Written by the Team panel's Coordinator mode switch, per space.
 settings="${HERDR_TEAM_SETTINGS:-$HOME/.config/herdr-team/coordinator.json}"
+# A space with no saved switch is on; the Team panel's settings.js and hcoord's picked() keep the same defaults.
+DEFAULT_ENABLED=true
 spaces_dir="${COORDINATOR_HOME:-$HOME/.claude/coordinator}/spaces"
 
 # Live sessions by id: name and busy/idle. The .key files beside them hold credentials and are never read.
@@ -47,7 +49,8 @@ live=$(jq -c --arg me "$HC_TERMINAL_ID" --arg space "$space" --argjson reg "$reg
 # Decided on the first event that finds no role, so a session whose terminal was not labelled yet still gets one.
 role="$own_role"
 if [ "$event" = SessionStart ] || [ -z "$own_role" ] || [ "$own_role" = coordinator ]; then
-  enabled=$(jq -r --arg s "$space" '.spaces[$s].enabled // false' "$settings" 2>/dev/null || echo false)
+  # has(), not //, because // treats a saved false as missing.
+  enabled=$(jq -r --arg s "$space" --argjson d "$DEFAULT_ENABLED" '(.spaces[$s] // {}) | if has("enabled") then .enabled else $d end' "$settings" 2>/dev/null || echo "$DEFAULT_ENABLED")
   role=$(decide_role "$own_role" "$enabled")
   if [ "$role" != "$own_role" ]; then
     labels=("role=$role")
