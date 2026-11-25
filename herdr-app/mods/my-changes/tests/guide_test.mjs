@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { validateGuide, parseGuide, guideEntry, guideStats, canFinish, headMoved, guidePath, notifyTarget, shouldFinish, finishOutcome, deliveryAction, undeliveredToast, HOLD_MS, CHANGED, NOT_IN_GUIDE } from "../guide.js";
+import { validateGuide, parseGuide, guideBase, guideEntry, guideStats, canFinish, headMoved, guidePath, notifyTarget, shouldFinish, finishOutcome, deliveryAction, undeliveredToast, HOLD_MS, CHANGED, NOT_IN_GUIDE } from "../guide.js";
 import { levelOf } from "../triage.js";
 
 const HEAD = "a".repeat(40);
@@ -72,5 +72,13 @@ assert.equal(deliveryAction("blocked", HOLD_MS - 1), "wait");
 assert.equal(deliveryAction("blocked", HOLD_MS), "give-up", "the message is dropped with a warning after ten minutes blocked");
 assert.equal(deliveryAction("working", HOLD_MS * 2), "send", "a coordinator freed late is still told");
 assert.deepEqual(undeliveredToast("login"), { title: "Could not tell the coordinator that login was reviewed. Tell it yourself.", level: "warning" }, "the give-up warning names the task");
+
+const named = validateGuide(raw({ baseBranch: "austinpham/\u0000onboarding" + "z".repeat(200) }));
+assert.equal(named.baseBranch, ("austinpham/ onboarding" + "z".repeat(200)).slice(0, 120), "the base branch name is capped and stripped of control characters");
+assert.equal(validateGuide(raw({ baseBranch: 7 })).baseBranch, "", "a non-string base branch name is dropped");
+assert.equal(validateGuide(raw()).baseBranch, "", "a guide without a base branch name still loads");
+assert.deepEqual(guideBase(validateGuide(raw({ baseBranch: "austinpham/onboarding" }))), { name: "austinpham/onboarding", rev: "b".repeat(40) }, "the branch range starts at the guide's fork point and names the child's base branch");
+assert.deepEqual(guideBase(validateGuide(raw())), { name: "bbbbbbb", rev: "b".repeat(40) }, "a guide without a base branch name labels the range with the short fork point sha");
+assert.equal(guideBase(null), null, "without a guide the usual base lookup applies");
 
 console.log("my-changes guide: all checks passed");

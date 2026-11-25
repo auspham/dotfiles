@@ -130,12 +130,12 @@ cmd_handoff() {
   mb=$(git -C "$worktree" merge-base HEAD "$base") head=$(git -C "$worktree" rev-parse HEAD)
   json=$(jq -n --arg guide "$(cat)" --arg ns "$(git -C "$worktree" -c core.quotePath=false diff --name-status --no-renames "$mb" HEAD)" \
     --arg nu "$(git -C "$worktree" -c core.quotePath=false diff --numstat --no-renames "$mb" HEAD)" --arg name "$name" --arg branch "$(label_of "$t" branch)" \
-    --arg base "$mb" --arg head "$head" --arg summary "$summary" '
+    --arg base "$mb" --arg baseBranch "$base" --arg head "$head" --arg summary "$summary" '
     def rows($s): $s | split("\n") | map(select(. != "") | split("\t"));
     (rows($ns)) as $st | (rows($nu) | map({key: (.[2:] | join("\t")), value: "\((.[0] | tonumber? // 0)):\((.[1] | tonumber? // 0))"}) | from_entries) as $nm |
     (rows($guide) | to_entries | map(if (.value | length) == 3 and (.value[0] | IN("high", "normal", "skim")) and .value[1] != "" and .value[2] != "" then {key: .value[1], value: {level: .value[0], reason: .value[2][0:200]}} else error("bad guide line \(.key + 1): want <high|normal|skim><TAB><path><TAB><reason>") end) | from_entries) as $g |
     ($g | keys - ($st | map(.[1])) | if length > 0 then error("not changed since the base: \(join(", "))") else . end) as $_ |
-    {name: $name, branch: $branch, base: $base, head: $head, at: (now | strftime("%Y-%m-%dT%H:%M:%SZ")), summary: $summary,
+    {name: $name, branch: $branch, baseBranch: $baseBranch, base: $base, head: $head, at: (now | strftime("%Y-%m-%dT%H:%M:%SZ")), summary: $summary,
      files: ($st | map(.[1] as $p | {path: $p, level: ($g[$p].level // "normal"), reason: ($g[$p].reason // "not in the coordinator'"'"'s guide"), sig: "\(.[0][0:1] | if IN("A", "D", "U") then . else "M" end):\($nm[$p])"}))}' 2>&1) || die "${json#jq: error*: }"
   dir="$(dirname "$(ledger_file)")/reviews"; mkdir -p "$dir"; out="$(cd "$dir" && pwd)/$name.json"
   printf '%s\n' "$json" > "$out.tmp" && mv "$out.tmp" "$out" && hc label "$t" review=yours "guide=$out" >/dev/null

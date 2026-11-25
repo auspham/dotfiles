@@ -4,7 +4,7 @@ import { LEVELS } from "./triage.js";
 
 /** @typedef {import("./triage.js").Level} Level */
 /** @typedef {{ level: Level, reason: string, sig: string }} GuideFile */
-/** @typedef {{ name: string, branch: string, base: string, head: string, at: number | null, summary: string, files: Map<string, GuideFile> }} Guide */
+/** @typedef {{ name: string, branch: string, baseBranch: string, base: string, head: string, at: number | null, summary: string, files: Map<string, GuideFile> }} Guide */
 /** @typedef {{ level: Level, reason: string, stale: boolean }} GuideEntry */
 
 export const CHANGED = "changed since the coordinator's review";
@@ -37,8 +37,11 @@ export function validateGuide(raw) {
     files.set(f.path, { level: f.level, reason: text(f.reason, 200), sig: f.sig });
   }
   const at = typeof g.at === "number" && Number.isFinite(g.at) ? g.at : null;
-  return { name: text(g.name, 80), branch: text(g.branch, 120), base: g.base, head: g.head, at, summary: text(g.summary, 600), files };
+  return { name: text(g.name, 80), branch: text(g.branch, 120), baseBranch: text(g.baseBranch, 120), base: g.base, head: g.head, at, summary: text(g.summary, 600), files };
 }
+
+/** Where the branch range starts under a guide: the child's fork point, named by its base branch or a short sha. @param {Guide | null} guide @returns {{ name: string, rev: string } | null} */
+export const guideBase = (guide) => (guide ? { name: guide.baseBranch || guide.base.slice(0, 7), rev: guide.base } : null);
 
 /** @param {string} source JSON text @returns {Guide | null} */
 export function parseGuide(source) {

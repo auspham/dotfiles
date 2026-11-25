@@ -4,6 +4,7 @@ import { spaces, panes, focused, terminals, exec, readTextFile, watchFolder, the
 import { langFor, highlightRows, hashLines, wrapTokens } from "./highlight.js";
 import { coordinatorNote } from "./coordinator.js";
 import { GuideSource } from "./guide_view.js";
+import { guideBase } from "./guide.js";
 import { LEVELS, LEVEL_LABEL, VERDICT_SCHEMA, pathFlags, diffFlags, isTest, isCode, testsChangedCode, levelOf, splitDiff, triagePrompt } from "./triage.js";
 import { followFocus } from "./review_pane.js";
 import { isReviewPane, followedTerminal, paneLocation, paneShown, openReviewPane, publishReview, publishThreads, paneThreads, requestToggle, takeToggle } from "./review_link.js";
@@ -216,8 +217,10 @@ export default class Changes extends View {
   read(name) { try { return localStorage.getItem(name); } catch { return null; } }
   write(name, value) { try { localStorage.setItem(name, value); } catch { /* storage can be unavailable */ } }
 
-  // The branch this one forked from: the first of the usual names that exists and is not HEAD itself.
+  // The branch this one forked from: the coordinator guide's fork point when it is an ancestor of HEAD, else the first of the usual names that exists and is not HEAD itself.
   async findBase(git) {
+    const fromGuide = guideBase(this.guide.guide);
+    if (fromGuide && (await git(["merge-base", "--is-ancestor", fromGuide.rev, "HEAD"])).code === 0) { this.baseAt = 0; return (this.base = fromGuide); }
     if (this.baseAt && Date.now() - this.baseAt < 30000 && this.baseRoot === this.root) return this.base;
     let found = null;
     for (const ref of BASES) {
