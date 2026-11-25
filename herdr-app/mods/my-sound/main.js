@@ -28,7 +28,7 @@ export default class MySound extends View {
     const seen = new Set();
     for (const agent of agents()) {
       seen.add(agent.address);
-      const alert = alertFor(this.last.get(agent.address), agent.status, roles.get(agent.address));
+      const alert = alertFor({ before: this.last.get(agent.address), now: agent.status, role: roles.get(agent.address) });
       this.last.set(agent.address, agent.status);
       if (alert && !isQuiet(agent.space, this.archived)) this.announce(agent, alert);
     }
