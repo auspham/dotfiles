@@ -23,9 +23,9 @@ esac
 STUB
 chmod +x "$bin/hc"
 
-terminal() { # address space session title folder [role] [coord]
-  jq -n --arg a "$1" --arg sp "$2" --arg s "$3" --arg t "$4" --arg f "$5" --arg r "${6:-}" --arg c "${7:-}" \
-    '{address: $a, _agent: "claude-code", title: $t, cwd: $f, labels: ({"herdr.space": $sp, where: "alpha / \($a)", "claude.session": $s} + (if $r != "" then {role: $r} else {} end) + (if $c != "" then {coord: $c} else {} end))}' > "$fx/$1.json"
+terminal() { # address space session title folder [role] [coord] [owner]
+  jq -n --arg a "$1" --arg sp "$2" --arg s "$3" --arg t "$4" --arg f "$5" --arg r "${6:-}" --arg c "${7:-}" --arg o "${8:-}" \
+    '{address: $a, _agent: "claude-code", title: $t, cwd: $f, labels: ({"herdr.space": $sp, where: "alpha / \($a)", "claude.session": $s} + (if $r != "" then {role: $r} else {} end) + (if $c != "" then {coord: $c} else {} end) + (if $o != "" then {owner: $o} else {} end))}' > "$fx/$1.json"
 }
 write_session() { printf '{"sessionId":"%s","name":"%s","status":"%s"}' "$1" "$2" "$3" > "$sessions/$4.json"; }
 enable() { printf '{"spaces":{"%s":{"enabled":true}}}' "$1" > "$root/settings.json"; }
@@ -153,6 +153,21 @@ reset
 terminal t1 spA s1 "task work" /w/wt child t2; write_session s1 child-agent busy 100
 out=$(HERDR_ROLE=child run SessionStart s1 | context)
 grep -q 'Your coordinator is unknown (terminal t2)' <<<"$out" || fail "a child with no visible peers is still told who its coordinator is"
+
+# A lent child is re-told its coordinator, and who it goes back to, when the lend or return happens.
+reset
+terminal t1 spA s1 "task work" /w/wt child t2; terminal t2 spA s2 "owner" /w/app coordinator; terminal t3 spA s3 "borrower" /w/app coordinator
+write_session s1 child-agent busy 100; write_session s2 owner-agent idle 200; write_session s3 borrower-agent idle 300
+run SessionStart s1 | context | grep -q 'on loan' && fail "a child that is not lent is not told it is on loan"
+terminal t1 spA s1 "task work" /w/wt child t3 t2
+out=$(run UserPromptSubmit s1 | context)
+grep -q 'Your coordinator is borrower-agent (terminal t3)' <<<"$out" || fail "a lent child is re-told its coordinator on its next prompt"
+grep -q 'on loan from owner-agent (terminal t2) and go back to it when borrower-agent runs hcoord return' <<<"$out" || fail "a lent child is told who lent it and how it goes back"
+[ -z "$(run UserPromptSubmit s1)" ] || fail "a lent child is told only once"
+terminal t1 spA s1 "task work" /w/wt child t2
+out=$(run UserPromptSubmit s1 | context)
+grep -q 'Your coordinator is owner-agent (terminal t2)' <<<"$out" || fail "a returned child is re-told its coordinator"
+grep -q 'on loan' <<<"$out" && fail "a returned child is no longer told it is on loan"
 
 # A damaged session file is skipped, not fatal.
 reset

@@ -33,7 +33,7 @@ fi
 # One JSON object per Claude terminal: where it is, what it works on and its role.
 terminals=$(
   for t in $(hc ls --json 2>/dev/null | jq -r '.terminals[]? | select(.agent == "claude-code") | .address'); do
-    hc get "$t" --json 2>/dev/null | jq -c '{address, space: .labels["herdr.space"], where: .labels.where, session: .labels["claude.session"], role: (.labels.role // ""), coord: (.labels.coord // ""), title: (.title // ""), folder: (.foreground.cwd // .cwd // "")}'
+    hc get "$t" --json 2>/dev/null | jq -c '{address, space: .labels["herdr.space"], where: .labels.where, session: .labels["claude.session"], role: (.labels.role // ""), coord: (.labels.coord // ""), owner: (.labels.owner // ""), title: (.title // ""), folder: (.foreground.cwd // .cwd // "")}'
   done | jq -s '.'
 )
 
@@ -58,7 +58,10 @@ fi
 
 coord_terminal=$(jq -r '.coord' <<<"$own")
 [ "$role" != child ] || [ -n "$coord_terminal" ] || coord_terminal="${HERDR_COORD:-}"
-coord_name=$(jq -r --arg t "$coord_terminal" --argjson reg "$registry" '(map(select(.address == $t)) | first | .session) as $s | if $s == null then empty else $reg[$s].name // empty end' <<<"$live")
+# $1 a terminal address. Echoes the session name of the live agent there, or nothing.
+name_of() { jq -r --arg t "$1" --argjson reg "$registry" '(map(select(.address == $t)) | first | .session) as $s | if $s == null then empty else $reg[$s].name // empty end' <<<"$live"; }
+coord_name=$(name_of "$coord_terminal")
+owner_terminal=$(jq -r '.owner' <<<"$own")
 
 roster=$(jq -r --argjson reg "$registry" --argjson max 8 '
   .[:$max] | map("- \($reg[.session].name) [\(.address)] (herdr \(.where // "?")) \($reg[.session].status // "unknown")\(if .role == "coordinator" then " (coordinator)" elif .role == "child" then " (child)" else "" end): \(.title[:60]), in \(.folder | split("/") | last)") | join("\n")' <<<"$live")
@@ -70,7 +73,7 @@ if [ -n "$roster" ] || [ "$role" = coordinator ] || [ "$role" = child ]; then
   context="You are one of several Claude agents sharing the herdr space \"$space_name\". You are $own_name (terminal $HC_TERMINAL_ID)."
   [ -z "$roster" ] || context+=$'\n'"Peers right now (status as of when this was written; ListAgents shows it live):"$'\n'"$roster"
   case "$role" in
-    child) context+=$'\n'"$(child_protocol "$coord_name" "$coord_terminal")"$'\n'"$(notes_pointer "$spaces_dir/$space/notes.md")" ;;
+    child) context+=$'\n'"$(child_protocol "$coord_name" "$coord_terminal" "$(name_of "$owner_terminal")" "$owner_terminal")"$'\n'"$(notes_pointer "$spaces_dir/$space/notes.md")" ;;
     coordinator)
       prefs=""; [ ! -f "$preferences" ] || prefs=$(head -c 3000 "$preferences")
       context+=$'\n'"$(coordinator_charter "$prefs")"
@@ -79,8 +82,9 @@ if [ -n "$roster" ] || [ "$role" = coordinator ] || [ "$role" = child ]; then
   esac
 fi
 
-# What identifies the group, so a prompt only repeats the context when someone joined or left.
-signature="$role|$(jq -r 'map(.session + ":" + .role) | sort | join(",")' <<<"$live")"
+# What identifies the group, so a prompt only repeats the context when someone joined or left, or this
+# child was lent or returned. The role stays the first field: the mode-off check below reads it.
+signature="$role|$coord_terminal|$(jq -r 'map(.session + ":" + .role) | sort | join(",")' <<<"$live")"
 mkdir -p "$state_dir"
 previous=$(cat "$state_dir/$session.sig" 2>/dev/null || true)
 printf '%s' "$signature" > "$state_dir/$session.sig"
