@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { wrapText, threadLines, blockHeight, blockCols, layoutItems, placeThreads, BLOCK_PAD, GAP_H, MAX_ANSWER_LINES } from "../comment_layout.js";
 import { newThread, patchLast, addReply, setResolved } from "../comment_threads.js";
 import { threadChip } from "../comment_status.js";
-import { writeMode, barAction, barTitle } from "../comment_bar.js";
+import { writeMode, barAction, barTitle, barShows } from "../comment_bar.js";
 import { splitSources } from "../comment_anchor.js";
 
 assert.deepEqual(wrapText("one two three four", 9), ["one two", "three", "four"], "wraps at word breaks");
@@ -82,3 +82,7 @@ assert.equal(barTitle(null, "", 3), "3 comments queued, not sent yet", "the bar 
 assert.equal(barTitle("new", "lines 6-9", 0), "New comment on lines 6-9", "the bar names the lines a new comment is on");
 
 console.log("my-changes comment layout: all checks passed");
+assert.deepEqual(barShows({ mode: "thread", id: "gone" }, null, 2), { editor: false, queue: true }, "keeps the Send all strip when the open thread is gone");
+assert.deepEqual(barShows(null, null, 1), { editor: false, queue: true }, "a queued comment keeps the Send all strip with nothing open");
+assert.deepEqual(barShows({ mode: "new" }, null, 0), { editor: true, queue: false }, "new lines open the editor with nothing queued");
+assert.deepEqual(barShows(null, null, 0), { editor: false, queue: false }, "nothing open and nothing queued shows no bar");

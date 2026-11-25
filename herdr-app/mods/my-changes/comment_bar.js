@@ -30,3 +30,6 @@ export function barTitle(mode, where, queued) {
   if (where) return `Thread on ${where}`;
   return `${queued} comment${queued === 1 ? "" : "s"} queued, not sent yet`;
 }
+
+/** Which parts of the bar show. The Send all strip depends only on the queue, so a closed or vanished thread never hides it. @param {{ mode: "new" } | { mode: "thread" } | null} composer @param {Thread | null} thread @param {number} queued */
+export const barShows = (composer, thread, queued) => ({ editor: composer?.mode === "new" || Boolean(composer && thread), queue: queued > 0 });

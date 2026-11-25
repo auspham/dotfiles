@@ -5,7 +5,7 @@ import { h_flex, v_flex, Input } from "gpui-base";
 import { makeAnchor, toUnified, anchorLabel } from "./comment_anchor.js";
 import { commentKey } from "./comment_view.js";
 import { isDraft, lastOf } from "./comment_threads.js";
-import { writeMode, barAction, barTitle } from "./comment_bar.js";
+import { writeMode, barAction, barTitle, barShows } from "./comment_bar.js";
 
 /** editing: the thread's queued comment is in the input, through Edit. */
 /** @typedef {{ mode: "new", anchor: import("./comment_anchor.js").Anchor } | { mode: "thread", id: string, editing?: boolean }} Composer */
@@ -104,10 +104,9 @@ function primaryButton(host, t, mode) {
 
 /** The bar: open on a thread or new lines, or showing Send all while comments are queued; null otherwise. @param {any} host @param {object} t theme */
 export function composerBar(host, t) {
-  const c = host.composer, thread = barThread(host), queued = host.comments.drafts();
-  if (c?.mode === "thread" && !thread) return null;
-  if (!c && !queued) return null;
-  const mode = writeMode(c, thread), where = c?.mode === "new" ? anchorLabel(c.anchor) : thread ? anchorLabel(thread.anchor) : "";
+  const thread = barThread(host), queued = host.comments.drafts(), shows = barShows(host.composer, thread, queued);
+  if (!shows.editor && !shows.queue) return null;
+  const c = shows.editor ? host.composer : null, mode = writeMode(c, thread), where = c?.mode === "new" ? anchorLabel(c.anchor) : thread ? anchorLabel(thread.anchor) : "";
   return v_flex().id("comment-bar").absolute().left(8).right(14).bottom(8).p(8).gap(6).rounded(8).bg(t.popover ?? t.background).border_1().border_color(t.accent).text_size(12)
     .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
     .child(h_flex().gap(8).items_center().child(div().flex_1().min_w(0).truncate().text_color(t.foreground).font_semibold().child(barTitle(mode, where, queued)))
