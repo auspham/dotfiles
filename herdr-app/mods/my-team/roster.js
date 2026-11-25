@@ -38,31 +38,55 @@ export const displayName = (terminal, sessions) => {
   return sessions.get(id)?.name ?? (id ? id.slice(0, 6) : null) ?? (terminal.title || terminal.address);
 };
 
-// The coordinator leads, then everyone else; within a group, agents needing attention come first.
-const rank = (card) => (card.role === "coordinator" ? 0 : 1);
+// Within a group, agents needing attention come first.
+const byAttention = (a, b) => (ORDER[a.status] ?? 9) - (ORDER[b.status] ?? 9) || a.address.localeCompare(b.address);
 
-/** One card per Claude agent in the space: the coordinator first, then those needing attention. */
+function toCard(t, sessions) {
+  return {
+    address: t.address,
+    session: t.labels?.["claude.session"] ?? null,
+    name: displayName(t, sessions),
+    label: t.title?.trim() || displayName(t, sessions),
+    status: typeof t.status === "string" ? t.status : (t.status?.state ?? "idle"),
+    title: t.title || "",
+    folder: folderOf(t),
+    where: t.labels?.where ?? "",
+    turn: t.turn ?? 0,
+    question: t.report?.msg ?? "",
+    role: t.labels?.role ?? "",
+    coord: t.labels?.coord ?? "",
+    owner: t.labels?.owner ?? "",
+    task: t.labels?.task ?? "",
+    branch: t.labels?.branch ?? "",
+    review: t.labels?.review ?? "",
+    reviewNote: t.labels?.review_note ?? "",
+    coordName: "",
+    ownerName: "",
+  };
+}
+
+/**
+ * The cards in groups: each coordinator followed by the children it controls now, then everyone else.
+ * A grouped child carries its coordinator's name, and a lent child its owner's name, for the view to show.
+ */
+export function groupCards(cards) {
+  const sorted = [...cards].sort(byAttention);
+  const names = new Map(sorted.map((c) => [c.address, c.name]));
+  const leads = sorted.filter((c) => c.role === "coordinator");
+  const placed = new Set(leads.map((c) => c.address));
+  const groups = leads.flatMap((lead) => {
+    const kids = sorted.filter((c) => c.role === "child" && c.coord === lead.address);
+    kids.forEach((c) => placed.add(c.address));
+    const named = kids.map((c) => ({ ...c, coordName: lead.name, ownerName: c.owner ? (names.get(c.owner) ?? c.owner) : "" }));
+    return [lead, ...named];
+  });
+  return [...groups, ...sorted.filter((c) => !placed.has(c.address))];
+}
+
+/** One card per Claude agent in the space, grouped by coordinator, those needing attention first in each group. */
 export function teamCards({ terminals, sessions, spaceId }) {
-  return terminals
-    .filter((t) => isClaude(t) && t.labels?.["herdr.space"] === spaceId && t.state !== "finished")
-    .map((t) => ({
-      address: t.address,
-      session: t.labels?.["claude.session"] ?? null,
-      name: displayName(t, sessions),
-      label: t.title?.trim() || displayName(t, sessions),
-      status: typeof t.status === "string" ? t.status : (t.status?.state ?? "idle"),
-      title: t.title || "",
-      folder: folderOf(t),
-      where: t.labels?.where ?? "",
-      turn: t.turn ?? 0,
-      question: t.report?.msg ?? "",
-      role: t.labels?.role ?? "",
-      task: t.labels?.task ?? "",
-      branch: t.labels?.branch ?? "",
-      review: t.labels?.review ?? "",
-      reviewNote: t.labels?.review_note ?? "",
-    }))
-    .sort((a, b) => rank(a) - rank(b) || (ORDER[a.status] ?? 9) - (ORDER[b.status] ?? 9) || a.address.localeCompare(b.address));
+  const live = terminals.filter((t) => isClaude(t) && t.labels?.["herdr.space"] === spaceId && t.state !== "finished");
+  return groupCards(live.map((t) => toCard(t, sessions)));
 }
 
 /** The space's name from a terminal's "space / tab" label, for the pane heading. */

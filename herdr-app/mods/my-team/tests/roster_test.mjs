@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { chattyPairs, feedCount, firstLine, messageFeed, messageKey, readTail, toolSummary } from "../feed.js";
-import { childSummary, displayName, resolveTarget, parseSessions, spaceName, teamCards } from "../roster.js";
+import { childSummary, displayName, groupCards, resolveTarget, parseSessions, spaceName, teamCards } from "../roster.js";
 import { MODELS, labelChanges, parseSettings, settingsFor, withSetting } from "../settings.js";
 
 const term = (address, space, session, over = {}) => ({
@@ -122,5 +122,29 @@ assert.equal(childSummary(reviewed), "1 in review, 1 ready for review", "a child
 assert.equal(childSummary(kids(["working", "pending"], ["idle", "yours"], ["idle", "yours"])), "1 working, 2 waiting for you", "a child whose review is yours is counted as waiting for you");
 
 assert.equal(childSummary(kids(["idle", "reviewed"], ["idle", "reviewed"])), "2 reviewed by you", "a child reviewed by the user is counted as reviewed by you");
+
+const sessionsAB = parseSessions(["a", "b"].map((n) => JSON.stringify({ sessionId: `s-${n}`, name: `lead-${n}` })));
+const agent = (address, labels, status = "idle") => term(address, "spA", `s-${address}`, { status, labels: { "herdr.space": "spA", "claude.session": `s-${address}`, ...labels } });
+const many = teamCards({
+  sessions: sessionsAB, spaceId: "spA",
+  terminals: [
+    agent("t5", { role: "child", coord: "t2" }, "working"),
+    agent("t6", { role: "child", coord: "t9" }),
+    agent("t4", { role: "child", coord: "t1" }, "working"),
+    agent("t3", { role: "child", coord: "t1" }, "blocked"),
+    term("t2", "spA", "s-b", { labels: { "herdr.space": "spA", "claude.session": "s-b", role: "coordinator" } }),
+    term("t1", "spA", "s-a", { labels: { "herdr.space": "spA", "claude.session": "s-a", role: "coordinator" } }),
+    agent("t7", { role: "child", coord: "t1", owner: "t2" }),
+  ],
+});
+assert.deepEqual(many.map((c) => c.address), ["t1", "t3", "t4", "t7", "t2", "t5", "t6"], "each coordinator is followed by its own children, then anything else");
+assert.equal(many[1].coord, "t1", "a card carries its coord label");
+assert.equal(many[1].coordName, "lead-a", "a child carries its coordinator's name");
+assert.equal(many[3].owner, "t2", "a card carries its owner label");
+assert.equal(many[3].ownerName, "lead-b", "a lent child carries its owner's name");
+assert.equal(many[1].ownerName, "", "a child that is not lent has no owner");
+assert.equal(many[6].coordName, "", "a child whose coordinator is gone is not grouped");
+assert.equal(groupCards([{ address: "t1", name: "x", role: "child", coord: "t2", owner: "t8", status: "idle" }, { address: "t2", name: "c", role: "coordinator", status: "idle" }])[1].ownerName, "t8", "an owner with no card is shown by its terminal");
+assert.equal(childSummary(many), "2 working", "the summary counts the children of every coordinator");
 
 console.log("my-team roster and feed: all checks passed");
