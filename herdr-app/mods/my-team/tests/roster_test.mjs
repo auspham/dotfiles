@@ -100,7 +100,10 @@ assert.ok(MODELS.every((m) => typeof m.label === "string"));
 const trio = [{ address: "t1", role: "" }, { address: "t2", role: "" }];
 assert.deepEqual(labelChanges(trio, true), [["t1", "role=coordinator"], ["t2", "role=coordinator"]], "switching on makes every agent without a role a coordinator");
 assert.deepEqual(labelChanges([{ address: "t1", role: "coordinator" }, { address: "t3", role: "child" }, trio[1]], true), [["t2", "role=coordinator"]], "switching on keeps existing coordinators and children as they are");
-assert.deepEqual(labelChanges([{ address: "t1", role: "coordinator" }, { address: "t2", role: "child" }, trio[0]], false), [["t1", "role="], ["t1", "coord="], ["t2", "role="], ["t2", "coord="]], "switching off clears every role");
+assert.deepEqual(labelChanges([{ address: "t1", role: "coordinator" }, { address: "t2", role: "child" }, trio[0]], false), [["t1", "role="], ["t1", "coord="]], "switching off takes the role from every coordinator and leaves children alone");
+const family = [{ address: "t1", role: "coordinator" }, { address: "t2", role: "child", coord: "t1" }];
+const afterOff = family.map((c) => (labelChanges(family, false).some(([a]) => a === c.address) ? { ...c, role: "" } : c));
+assert.deepEqual(labelChanges(afterOff, true), [["t1", "role=coordinator"]], "switching the mode off and on again keeps children as children");
 assert.deepEqual(labelChanges([], true), [], "nobody to lead, nothing to label");
 
 const withSocket = parseSessions([JSON.stringify({ sessionId: "s7", name: "api-agent", messagingSocketPath: "/run/user/1000/cc-socks/42.sock" })]);

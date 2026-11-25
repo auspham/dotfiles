@@ -46,8 +46,11 @@ export function withSetting(spaces, spaceId, patch) {
   return JSON.stringify({ spaces: next }, null, 2) + "\n";
 }
 
-/** The label changes for switching the mode: on makes every agent without a role a coordinator, off clears every role. */
+/**
+ * The label changes for switching the mode: on makes every agent without a role a coordinator, off takes the role
+ * from coordinators only. Children keep their labels, so switching back on never turns a child into a coordinator.
+ */
 export function labelChanges(cards, on) {
-  if (!on) return cards.filter((c) => c.role).flatMap((c) => [[c.address, "role="], [c.address, "coord="]]);
+  if (!on) return cards.filter((c) => c.role === "coordinator").flatMap((c) => [[c.address, "role="], [c.address, "coord="]]);
   return cards.filter((c) => !c.role).map((c) => [c.address, "role=coordinator"]);
 }
