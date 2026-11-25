@@ -964,6 +964,60 @@ export default class Changes extends View {
 
   holds() { return this.handle.is_focused() && shared("nav.focus") === "changes"; }
 
+  seg(t, id, label, on, enabledSeg, click) {
+    return div().id(id).px(9).h(24).flex().items_center().rounded(6).text_size(12)
+      .bg(on ? t.selected : t.background).text_color(on ? t.foreground : enabledSeg ? t.muted : t.dim)
+      .when(enabledSeg, (e) => e.cursor_pointer().hover((h) => h.bg(on ? t.selected : t.hover))).on_click(enabledSeg ? click : () => {}).child(label);
+  }
+
+  // The open file's name, the Unified/Split switch, Open in Zed and Mark reviewed.
+  fileBar(openFile, t) {
+    return v_flex().flex_none().px(12).py(6).gap(6).border_b(1).border_color(t.border)
+      .on_size_change((size, cx) => { if (Math.abs(size.width - this.barW) > 1) { this.barW = size.width; cx.notify(); } })
+      .child(h_flex().gap(8).items_center()
+        .child(div().flex_1().min_w(0).truncate().text_size(12).text_color(t.muted).child(this.open))
+        .when(Boolean(openFile && this.stale(openFile)), (e) => e.child(div().flex_none().text_size(11).text_color(t.blocked).child("changed since you reviewed")))
+        .when(this.truncated, (e) => e.child(div().flex_none().text_size(11).text_color(t.dim).child(`first ${MAX_ROWS.toLocaleString()} lines`))))
+      .child(h_flex().gap(8).gap_y(6).flex_wrap().items_center()
+        .child(h_flex().gap(2).flex_none()
+          .child(this.seg(t, "mode-unified", "Unified", this.mode === "unified", true, (_e, cx) => this.setMode("unified", cx)))
+          .child(this.seg(t, "mode-split", "Split", this.mode === "split", true, (_e, cx) => this.setMode("split", cx)))
+          .child(this.seg(t, "expand", "⤢", false, true, (_e, cx) => { this.toggleExpand(); cx.notify(); })))
+        .child(div().flex_1())
+        .child(div().id("open-zed").h(26).px(10).flex().flex_none().items_center().rounded(6).cursor_pointer().text_size(12).bg(t.raised).text_color(t.muted)
+          .hover((h) => h.bg(t.hover).text_color(t.foreground)).tooltip("Open in Zed at the selected line, or the first change (key: o)")
+          .on_click((_e, cx) => this.openInEditor(cx)).child(this.barW < COMPACT_BAR ? "Zed" : "Open in Zed"))
+        .child(div().id("mark-reviewed").h(26).px(10).flex().flex_none().items_center().rounded(6).cursor_pointer().text_size(12)
+          .bg(openFile && this.reviewed(openFile) ? t.raised : t.solid).text_color(openFile && this.reviewed(openFile) ? t.muted : t.solid_foreground)
+          .on_click((_e, cx) => this.toggleReviewed(this.open, cx, true))
+          .child(openFile && this.reviewed(openFile) ? "Reviewed (undo)" : "Mark reviewed")));
+  }
+
+  // The open file's diff, unified or split, with the split's drag handle.
+  diffBox(t, splitting) {
+    return div().flex_1().min_h(0).relative().font_family(settings().font_family ?? "JetBrains Mono").text_size(11)
+      .on_mouse_down("left", (ev) => { this.shift = Boolean(ev.modifiers?.shift); })
+      .on_size_change((size, cx) => { if (Math.abs(size.width - this.diffW) > 1) { this.diffW = size.width; cx.notify(); } })
+      .child(div().id("changes-diff-x").size_full().overflow_x_scrollbar()
+        .child(div().w_full().min_w(splitting ? 0 : this.diffWidth).h_full().child(v_virtual_list("changes-diff", splitting ? this.split.length : this.rows.length, splitting ? this.heights : LINE_H, (i) => `${this.mode}${i}`,
+          (range) => splitting
+            ? this.split.slice(range.start, range.end).map((row, k) => this.splitRow(row, t, this.isSel(range.start + k)))
+            : this.rows.slice(range.start, range.end).map((row, k) => this.diffRow(row, t, this.isSel(range.start + k)))).size_full()
+            .on_item_click((key, cx) => { const extend = this.shift; this.shift = false; this.pickRow(key, extend, cx); })
+            .on_item_secondary_click((key, _ev, cx) => this.pickRow(key, true, cx)))))
+      .child(Scrollbar.vertical("changes-diff").viewport_from_layout().absolute().inset_0())
+      .when(splitting && this.split.length > 0, (e) => e.child(div().id("split-handle").absolute().top(0).bottom(0).left((this.leftW ?? 0) - 3).w(7).cursor_col_resize()
+        .on_mouse_down("left", (ev, cx) => {
+          cx.stop_propagation();
+          if (ev.click_count === 2) { this.ratio = 0.5; this.write("ratio", "0.5"); } else this.drag = true;
+          cx.notify();
+        })))
+      .when(splitting && this.drag, (e) => e.child(div().id("split-drag").absolute().inset_0().cursor_col_resize()
+        .on_mouse_move((ev, cx) => { this.ratio = clamp(ev.local_position.x / Math.max(1, this.diffW), 0.15, 0.85); cx.notify(); })
+        .on_mouse_up("left", (_ev, cx) => { this.drag = false; this.write("ratio", String(this.ratio)); cx.notify(); })))
+      .when(!this.open && this.files.length > 0, (e) => e.child(div().absolute().top(6).px(12).text_color(t.dim).child("Select a file to view its changes")));
+  }
+
   render(cx) {
     if (props()?.menu) return this.menuView(theme());
     if (key() !== this.context) this.refresh(cx);
@@ -976,9 +1030,6 @@ export default class Changes extends View {
     const splitting = this.mode === "split";
     if (splitting) this.layoutSplit();
     const reviewedCount = this.files.filter((f) => this.reviewed(f)).length;
-    const seg = (id, label, on, enabledSeg, click) => div().id(id).px(9).h(24).flex().items_center().rounded(6).text_size(12)
-      .bg(on ? t.selected : t.background).text_color(on ? t.foreground : enabledSeg ? t.muted : t.dim)
-      .when(enabledSeg, (e) => e.cursor_pointer().hover((h) => h.bg(on ? t.selected : t.hover))).on_click(enabledSeg ? click : () => {}).child(label);
     return v_flex().id("changes").relative().size_full().min_h(0).rounded(10).overflow_hidden().bg(t.background).border_1().border_color(this.holds() ? t.accent : t.border).text_color(t.foreground).text_size(13).track_focus(this.handle)
       .on_key_down((e, cx) => {
         if (e.key === "o" && !this.asking && !e.modifiers.control && !e.modifiers.alt && !e.modifiers.shift && this.open) { this.openInEditor(cx); cx.stop_propagation(); return; }
@@ -1003,10 +1054,10 @@ export default class Changes extends View {
           .child(this.triaging ? "Triaging…" : judged && untriaged > 0 ? `Triage ${untriaged} more` : "Triage")))
         .child(div().flex_1()).child(div().text_size(11).text_color(t.ansi2).child(`+${add}`)).child(div().text_size(11).text_color(t.ansi1).child(`−${del}`)))
       .child(h_flex().min_h(36).py(4).flex_none().flex_wrap().px(10).gap(4).gap_y(4).items_center().border_b(1).border_color(t.border)
-        .child(seg("range-work", "Uncommitted", this.range === "work", true, (_e, cx) => this.setRange("work", cx)))
-        .child(seg("range-commit", "Last commit", this.range === "commit", Boolean(this.parent), (_e, cx) => this.setRange("commit", cx))
+        .child(this.seg(t, "range-work", "Uncommitted", this.range === "work", true, (_e, cx) => this.setRange("work", cx)))
+        .child(this.seg(t, "range-commit", "Last commit", this.range === "commit", Boolean(this.parent), (_e, cx) => this.setRange("commit", cx))
           .tooltip(this.parent ? `Since the parent of HEAD: "${this.parent.subject}" plus uncommitted changes` : "HEAD has no parent commit"))
-        .child(seg("range-branch", this.base ? `Since ${this.base.name}` : "Since base", this.range === "branch", Boolean(this.base), (_e, cx) => this.setRange("branch", cx))
+        .child(this.seg(t, "range-branch", this.base ? `Since ${this.base.name}` : "Since base", this.range === "branch", Boolean(this.base), (_e, cx) => this.setRange("branch", cx))
           .tooltip(this.base ? `The whole branch: every commit since it forked from ${this.base.name}, plus uncommitted changes` : "No base branch found"))
         .child(div().flex_1())
         .child(div().text_size(11).text_color(this.files.length && reviewedCount === this.files.length ? t.ansi2 : t.muted).child(`${reviewedCount}/${this.files.length} reviewed`)))
@@ -1029,50 +1080,12 @@ export default class Changes extends View {
         })
         .child(div().w_full().h(1).bg(t.border)))
       .when(this.limited, el => el.child(div().px(12).py(4).text_size(11).text_color(t.dim).child("Showing the first 1,000 changed files")))
-      .when(Boolean(openFile), (el) => el.child(v_flex().flex_none().px(12).py(6).gap(6).border_b(1).border_color(t.border)
-        .on_size_change((size, cx) => { if (Math.abs(size.width - this.barW) > 1) { this.barW = size.width; cx.notify(); } })
-        .child(h_flex().gap(8).items_center()
-          .child(div().flex_1().min_w(0).truncate().text_size(12).text_color(t.muted).child(this.open))
-          .when(Boolean(openFile && this.stale(openFile)), (e) => e.child(div().flex_none().text_size(11).text_color(t.blocked).child("changed since you reviewed")))
-          .when(this.truncated, (e) => e.child(div().flex_none().text_size(11).text_color(t.dim).child(`first ${MAX_ROWS.toLocaleString()} lines`))))
-        .child(h_flex().gap(8).gap_y(6).flex_wrap().items_center()
-          .child(h_flex().gap(2).flex_none()
-            .child(seg("mode-unified", "Unified", this.mode === "unified", true, (_e, cx) => this.setMode("unified", cx)))
-            .child(seg("mode-split", "Split", this.mode === "split", true, (_e, cx) => this.setMode("split", cx)))
-            .child(seg("expand", "⤢", false, true, (_e, cx) => { this.toggleExpand(); cx.notify(); })))
-          .child(div().flex_1())
-          .child(div().id("open-zed").h(26).px(10).flex().flex_none().items_center().rounded(6).cursor_pointer().text_size(12).bg(t.raised).text_color(t.muted)
-            .hover((h) => h.bg(t.hover).text_color(t.foreground)).tooltip("Open in Zed at the selected line, or the first change (key: o)")
-            .on_click((_e, cx) => this.openInEditor(cx)).child(this.barW < COMPACT_BAR ? "Zed" : "Open in Zed"))
-          .child(div().id("mark-reviewed").h(26).px(10).flex().flex_none().items_center().rounded(6).cursor_pointer().text_size(12)
-            .bg(openFile && this.reviewed(openFile) ? t.raised : t.solid).text_color(openFile && this.reviewed(openFile) ? t.muted : t.solid_foreground)
-            .on_click((_e, cx) => this.toggleReviewed(this.open, cx, true))
-            .child(openFile && this.reviewed(openFile) ? "Reviewed (undo)" : "Mark reviewed")))))
+      .when(Boolean(openFile), (el) => el.child(this.fileBar(openFile, t)))
       .when(Boolean(banner), (el) => el.child(banner))
       .child(v_flex().id("review-area").flex_1().min_h(0).relative()
         .on_size_change((size, cx) => { if (Math.abs(size.height - this.areaH) > 1) { this.areaH = size.height; cx.notify(); } })
         .on_mouse_down_out((_e, cx) => { if (this.sel) { this.sel = null; cx.notify(); } })
-        .child(div().flex_1().min_h(0).relative().font_family(settings().font_family ?? "JetBrains Mono").text_size(11)
-        .on_mouse_down("left", (ev) => { this.shift = Boolean(ev.modifiers?.shift); })
-        .on_size_change((size, cx) => { if (Math.abs(size.width - this.diffW) > 1) { this.diffW = size.width; cx.notify(); } })
-        .child(div().id("changes-diff-x").size_full().overflow_x_scrollbar()
-          .child(div().w_full().min_w(splitting ? 0 : this.diffWidth).h_full().child(v_virtual_list("changes-diff", splitting ? this.split.length : this.rows.length, splitting ? this.heights : LINE_H, (i) => `${this.mode}${i}`,
-            (range) => splitting
-              ? this.split.slice(range.start, range.end).map((row, k) => this.splitRow(row, t, this.isSel(range.start + k)))
-              : this.rows.slice(range.start, range.end).map((row, k) => this.diffRow(row, t, this.isSel(range.start + k)))).size_full()
-              .on_item_click((key, cx) => { const extend = this.shift; this.shift = false; this.pickRow(key, extend, cx); })
-              .on_item_secondary_click((key, _ev, cx) => this.pickRow(key, true, cx)))))
-        .child(Scrollbar.vertical("changes-diff").viewport_from_layout().absolute().inset_0())
-        .when(splitting && this.split.length > 0, (e) => e.child(div().id("split-handle").absolute().top(0).bottom(0).left((this.leftW ?? 0) - 3).w(7).cursor_col_resize()
-          .on_mouse_down("left", (ev, cx) => {
-            cx.stop_propagation();
-            if (ev.click_count === 2) { this.ratio = 0.5; this.write("ratio", "0.5"); } else this.drag = true;
-            cx.notify();
-          })))
-        .when(splitting && this.drag, (e) => e.child(div().id("split-drag").absolute().inset_0().cursor_col_resize()
-          .on_mouse_move((ev, cx) => { this.ratio = clamp(ev.local_position.x / Math.max(1, this.diffW), 0.15, 0.85); cx.notify(); })
-          .on_mouse_up("left", (_ev, cx) => { this.drag = false; this.write("ratio", String(this.ratio)); cx.notify(); })))
-        .when(!this.open && this.files.length > 0, (e) => e.child(div().absolute().top(6).px(12).text_color(t.dim).child("Select a file to view its changes"))))
+        .child(this.diffBox(t, splitting))
         .when(Boolean(this.open) && Boolean(this.root), (e) => e.child(this.askPanel(t)))
         .when(Boolean(this.vdrag), (e) => e.child(div().id("threads-drag").absolute().inset_0().cursor_row_resize()
           .on_mouse_move((ev, cx) => { this.threadH = clamp(this.vdrag.h + (this.vdrag.y - ev.position.y), 90, Math.max(90, this.areaH - 140)); cx.notify(); })
