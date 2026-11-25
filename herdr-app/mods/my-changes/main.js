@@ -9,10 +9,11 @@ import { followFocus } from "./review_pane.js";
 import { isReviewPane, followedTerminal, paneLocation, paneShown, openReviewPane, publishReview, publishThreads, paneThreads, requestToggle, takeToggle } from "./review_link.js";
 import { paneView, syncPane } from "./review_pane_view.js";
 import { CommentStore } from "./comment_store.js";
-import { deliverer, pollReplies } from "./comment_send.js";
+import { sender, pollReplies } from "./comment_send.js";
 import { listening } from "./comment_replies.js";
 import { commentLayout, blockView } from "./comment_view.js";
-import { openComposer, closeComposer, clickBlock, submitComposer, composerBar } from "./comment_actions.js";
+import { openComposer, closeComposer, clickBlock, submitComposer, composerBar, sendDrafts } from "./comment_actions.js";
+import { sendLabel } from "./comment_batch.js";
 
 let lastLocation = null;
 function location() {
@@ -163,15 +164,15 @@ export default class Changes extends View {
     this.sel = null; this.chat = { session: null, messages: [] }; this.hasQuestion = false; this.threadScroll = ScrollHandle.new(); this.scrollThreads = false; this.threadH = clamp(Number(this.read("threadH")) || 240, 90, 900); this.areaH = 700; this.vdrag = null;
     this.listH = Number(this.read("listH")) || 0; this.listSeen = 200; this.panelH = 800; this.ldrag = null; // listH 0: as tall as its rows
     // The review pane copy draws what the side panel publishes, taken in by a timer since render must not change state; it reads no git state of its own.
-    this.comments = new CommentStore(isReviewPane()); this.deliver = deliverer(this, this.comments); this.composer = null;
-    this.commentInput = InputState.new({ placeholder: "Comment on these lines; Enter sends it" });
+    this.comments = new CommentStore(isReviewPane()); this.sendDrafts = sender(this, this.comments); this.composer = null;
+    this.commentInput = InputState.new({ placeholder: "Comment on these lines; Enter saves a draft" });
     this.commentInput.on("submit", (_e, cx) => submitComposer(this, cx));
     this.commentInput.on("focus", (_e, cx) => { this.typing = true; cx.notify(); });
     this.commentInput.on("blur", (_e, cx) => { this.typing = false; cx.notify(); });
     if (isReviewPane()) { cx.timer.every(250, (cx) => { syncPane(this, key(), cx); if (this.comments.mirrorFrom(paneThreads(this.root, this.open))) cx.notify(); }); return; }
     this.refresh(cx);
     cx.timer.every(10000, (cx) => this.refresh(cx));
-    cx.timer.every(400, (cx) => { this.applyFocus(cx); const path = takeToggle(this); if (path) this.toggleReviewed(path, cx, true); if (this.comments.takeRequest(this.root, this.deliver, cx)) { publishThreads(this); cx.notify(); } });
+    cx.timer.every(400, (cx) => { this.applyFocus(cx); const path = takeToggle(this); if (path) this.toggleReviewed(path, cx, true); if (this.comments.takeRequest(this.root, this.sendDrafts, cx)) { publishThreads(this); cx.notify(); } });
     cx.timer.every(3000, (cx) => this.pollComments(cx));
     cx.spawn(async (cx) => { for (;;) { this.command(await nextCommand(), cx); cx.notify(); } });
     // The chat runs tests too; watch for its runs while it answers.
@@ -1028,6 +1029,8 @@ export default class Changes extends View {
         .child(div().id("open-zed").h(26).px(10).flex().flex_none().items_center().rounded(6).cursor_pointer().text_size(12).bg(t.raised).text_color(t.muted)
           .hover((h) => h.bg(t.hover).text_color(t.foreground)).tooltip("Open in Zed at the selected line, or the first change (key: o)")
           .on_click((_e, cx) => this.openInEditor(cx)).child(this.barW < COMPACT_BAR ? "Zed" : "Open in Zed"))
+        .when(this.comments.drafts() > 0, (e) => e.child(div().id("send-drafts").h(26).px(10).flex().flex_none().items_center().rounded(6).cursor_pointer().text_size(12).bg(t.raised).text_color(t.foreground)
+          .hover((h) => h.bg(t.hover)).tooltip("Send every draft comment to the agent at once").on_click((_e, cx) => sendDrafts(this, cx)).child(sendLabel(this.comments.drafts()))))
         .child(div().id("mark-reviewed").h(26).px(10).flex().flex_none().items_center().rounded(6).cursor_pointer().text_size(12)
           .bg(openFile && this.reviewed(openFile) ? t.raised : t.solid).text_color(openFile && this.reviewed(openFile) ? t.muted : t.solid_foreground)
           .on_click((_e, cx) => this.toggleReviewed(this.open, cx, true))

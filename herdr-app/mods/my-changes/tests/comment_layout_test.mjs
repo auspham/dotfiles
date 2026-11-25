@@ -10,7 +10,9 @@ assert.deepEqual(wrapText("a\n\nb", 20), ["a", "", "b"], "keeps the answer's bla
 const anchor = { lines: [{ side: "new", n: 3, text: "let x = 2" }], before: [], after: [] };
 const t = newThread({ id: "cabc123", path: "a.js", anchor, q: "Why is this two?", now: 1 });
 const open = { collapsed: false, outdated: false };
-assert.deepEqual(threadLines(t, 80, open).map((l) => l.text), ["Comment on line 3", "You: Why is this two?", "Thinking…", "Click to collapse, resolve or delete"], "a pending thread shows the comment then Thinking");
+assert.deepEqual(threadLines(t, 80, open).map((l) => l.text), ["Comment on line 3", "You: Why is this two?", "Draft: not sent until you click Send", "Click to edit, send or discard the draft"], "a new comment shows as a draft, not as sent");
+const pending = patchLast([t], t.id, { status: "pending" })[0];
+assert.deepEqual(threadLines(pending, 80, open).slice(2).map((l) => l.text), ["Thinking…", "Click to collapse, resolve or delete"], "a comment asked of claude shows Thinking");
 const sent = patchLast([t], t.id, { status: "sent", to: { address: "t7", name: "fixer" } })[0];
 assert.equal(threadLines(sent, 80, open)[2].text, "Sent to fixer", "a comment sent to an agent names it while waiting");
 const answered = patchLast([sent], t.id, { status: "done", a: "Because." })[0];

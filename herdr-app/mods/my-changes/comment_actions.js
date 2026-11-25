@@ -4,7 +4,8 @@ import { div } from "gpui-kit";
 import { h_flex, v_flex, Input } from "gpui-base";
 import { makeAnchor, toUnified, anchorLabel } from "./comment_anchor.js";
 import { commentKey } from "./comment_view.js";
-import { waiting } from "./comment_threads.js";
+import { waiting, isDraft, lastOf } from "./comment_threads.js";
+import { sendLabel } from "./comment_batch.js";
 
 /** @typedef {{ mode: "new", anchor: import("./comment_anchor.js").Anchor } | { mode: "thread", id: string }} Composer */
 
@@ -27,20 +28,22 @@ export function clickBlock(host, key, cx) {
   const hit = commentKey(key);
   if (!hit) return false;
   if (hit === "add") { openComposer(host, cx); return true; }
+  const thread = host.comments.find(hit);
   host.composer = { mode: "thread", id: hit };
-  host.commentInput.set_value("");
-  if (!waiting(host.comments.find(hit) ?? { exchanges: [{ status: "done" }] })) host.commentInput.focus();
+  // A draft opens with its text, so the bar edits it rather than stack a second comment.
+  host.commentInput.set_value(thread && isDraft(thread) ? lastOf(thread).q : "");
+  if (thread && !waiting(thread)) host.commentInput.focus();
   cx.notify();
   return true;
 }
 
-/** Sends what the bar holds: a new thread, or a reply to the open one. @param {any} host @param {any} cx */
+/** Saves what the bar holds as a draft: a new thread, a reply, or the open thread's edited draft. @param {any} host @param {any} cx */
 export function submitComposer(host, cx) {
   const text = host.commentInput.value().trim(), c = host.composer;
   if (!text || !c || !host.root || !host.open) return;
-  const where = { root: host.root, path: host.open };
-  if (c.mode === "new") host.comments.add({ ...where, anchor: c.anchor, text }, host.deliver, cx);
-  else host.comments.act("reply", { ...where, id: c.id, text }, host.deliver, cx);
+  const where = { root: host.root, path: host.open }, thread = c.mode === "thread" ? host.comments.find(c.id) : null;
+  if (c.mode === "new") host.comments.add({ ...where, anchor: c.anchor, text });
+  else host.comments.act(thread && isDraft(thread) ? "edit" : "reply", { ...where, id: c.id, text });
   host.sel = null; host.publishComments();
   closeComposer(host, cx);
 }
@@ -48,9 +51,17 @@ export function submitComposer(host, cx) {
 /** @param {any} host @param {string} op @param {string} id @param {any} cx */
 function act(host, op, id, cx) {
   if (op === "collapse") host.comments.toggle(id);
-  else host.comments.act(op, { root: host.root, path: host.open, id }, host.deliver, cx);
+  else host.comments.act(op, { root: host.root, path: host.open, id });
   host.publishComments();
   closeComposer(host, cx);
+}
+
+/** Sends every draft as one batch; from the review pane, through the side panel. @param {any} host @param {any} cx */
+export function sendDrafts(host, cx) {
+  if (!host.root || !host.open) return null;
+  const batch = host.comments.send({ root: host.root, path: host.open }, host.sendDrafts, cx);
+  host.publishComments(); cx.notify();
+  return batch;
 }
 
 /** @param {object} t @param {{ id: string, label: string, click: Function, strong?: boolean }} spec */
@@ -62,9 +73,11 @@ export function composerBar(host, t) {
   const c = host.composer, thread = c?.mode === "thread" ? host.comments.find(c.id) : null;
   if (!c || (c.mode === "thread" && !thread)) return null;
   const label = c.mode === "new" ? `Comment on ${anchorLabel(c.anchor)}` : `Thread on ${anchorLabel(thread.anchor)}`;
-  const canWrite = c.mode === "new" || !waiting(thread);
+  const canWrite = c.mode === "new" || !waiting(thread), draft = thread && isDraft(thread), drafts = host.comments.drafts();
   const row = h_flex().gap(6).items_center().flex_wrap()
-    .when(canWrite, (e) => e.child(button(t, { id: "cm-send", label: c.mode === "new" ? "Comment" : "Reply", click: (_e, cx) => submitComposer(host, cx), strong: true })));
+    .when(canWrite, (e) => e.child(button(t, { id: "cm-save", label: c.mode === "new" ? "Add draft" : draft ? "Save draft" : "Reply", click: (_e, cx) => submitComposer(host, cx), strong: true })))
+    .when(drafts > 0, (e) => e.child(button(t, { id: "cm-send", label: sendLabel(drafts), click: (_e, cx) => { sendDrafts(host, cx); closeComposer(host, cx); } })))
+    .when(Boolean(draft) && thread.exchanges.length > 1, (e) => e.child(button(t, { id: "cm-discard", label: "Discard draft", click: (_e, cx) => act(host, "discard", thread.id, cx) })));
   const actions = thread ? row
     .child(button(t, { id: "cm-collapse", label: host.comments.collapsed.has(thread.id) ? "Expand" : "Collapse", click: (_e, cx) => act(host, "collapse", thread.id, cx) }))
     .child(button(t, { id: "cm-resolve", label: thread.resolved ? "Reopen" : "Resolve", click: (_e, cx) => act(host, thread.resolved ? "reopen" : "resolve", thread.id, cx) }))

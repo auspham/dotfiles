@@ -3,14 +3,14 @@
 import { parseAnchor } from "./comment_anchor.js";
 
 /** @typedef {import("./comment_anchor.js").Anchor} Anchor */
-/** held: waiting for a blocked agent; sent: typed to the agent, awaiting hreview; pending: asked of claude -p. */
-/** @typedef {"held" | "sent" | "pending" | "done" | "error"} Status */
+/** draft: saved, not sent until the user clicks Send; held: waiting for a blocked agent; sent: typed to the agent, awaiting hreview; pending: asked of claude -p. */
+/** @typedef {"draft" | "held" | "sent" | "pending" | "done" | "error"} Status */
 /** @typedef {{ address: string, name: string }} Agent */
 /** @typedef {{ q: string, a: string, status: Status, to: Agent | null, at: number }} Exchange */
 /** heard: how many hreview lines for this thread were already read, so reading the file again adds nothing twice. */
 /** @typedef {{ id: string, path: string, anchor: Anchor, at: number, resolved: boolean, session: string | null, heard: number, exchanges: Exchange[] }} Thread */
 
-export const STATUSES = ["held", "sent", "pending", "done", "error"];
+export const STATUSES = ["draft", "held", "sent", "pending", "done", "error"];
 export const MAX_THREADS = 500;
 const ID = /^[a-z0-9]{4,16}$/;
 
@@ -18,7 +18,7 @@ const ID = /^[a-z0-9]{4,16}$/;
 export const threadId = (random = Math.random) => `c${Math.floor(random() * 36 ** 6).toString(36).padStart(6, "0")}`;
 
 /** @param {string} q @param {number} now @returns {Exchange} */
-const exchange = (q, now) => ({ q, a: "", status: "pending", to: null, at: now });
+const exchange = (q, now) => ({ q, a: "", status: "draft", to: null, at: now });
 
 /** A new thread with its first comment. @param {{ id: string, path: string, anchor: Anchor, q: string, now: number }} spec @returns {Thread} */
 export const newThread = ({ id, path, anchor, q, now }) => ({ id, path, anchor, at: now, resolved: false, session: null, heard: 0, exchanges: [exchange(q, now)] });
@@ -32,6 +32,19 @@ export const addReply = (threads, id, q, now) => edit(threads, id, (t) => ({ ...
 /** Changes a thread's newest exchange. @param {Thread[]} threads @param {string} id @param {Partial<Exchange>} patch */
 export const patchLast = (threads, id, patch) => edit(threads, id, (t) => ({ ...t, exchanges: [...t.exchanges.slice(0, -1), { ...t.exchanges[t.exchanges.length - 1], ...patch }] }));
 
+/** Changes the newest exchange of every thread in `ids`. @param {Thread[]} threads @param {string[]} ids @param {Partial<Exchange>} patch */
+export const patchMany = (threads, ids, patch) => ids.reduce((ts, id) => patchLast(ts, id, patch), threads);
+
+/** Rewrites a thread's unsent comment; a sent one is left alone. @param {Thread[]} threads @param {string} id @param {string} q */
+export const editDraft = (threads, id, q) => edit(threads, id, (t) => (isDraft(t) ? patchLast([t], id, { q })[0] : t));
+
+/** Drops a thread's unsent comment, and the thread with it when that was its only comment. @param {Thread[]} threads @param {string} id */
+export function discardDraft(threads, id) {
+  const t = threads.find((x) => x.id === id);
+  if (!t || !isDraft(t)) return threads;
+  return t.exchanges.length === 1 ? removeThread(threads, id) : edit(threads, id, (x) => ({ ...x, exchanges: x.exchanges.slice(0, -1) }));
+}
+
 /** @param {Thread[]} threads @param {string} id @param {boolean} resolved */
 export const setResolved = (threads, id, resolved) => edit(threads, id, (t) => ({ ...t, resolved }));
 
@@ -43,6 +56,9 @@ export const removeThread = (threads, id) => threads.filter((t) => t.id !== id);
 
 /** @param {Thread} t */
 export const lastOf = (t) => t.exchanges[t.exchanges.length - 1];
+
+/** Whether the thread's newest comment is an unsent draft. @param {Thread} t */
+export const isDraft = (t) => lastOf(t).status === "draft";
 
 /** Whether the thread still waits on an answer. @param {Thread} t */
 export const waiting = (t) => ["held", "sent", "pending"].includes(lastOf(t).status);

@@ -30,14 +30,8 @@ function body(t) {
   return `On ${t.path}, ${anchorLabel(t.anchor)}:\n${FENCE}diff\n${anchorText(t.anchor)}\n${FENCE}\n${earlier ? `Earlier in this thread:\n${earlier}\n\nFollow-up: ` : ""}${q}`;
 }
 
-/** Where a thread's comment is written for its agent to read. @param {string} stateHome @param {string} id */
-export const commentPath = (stateHome, id) => `${stateHome}/herdr-review/comments/${id}.md`;
-
-/** The comment file's text: the lines, the earlier exchanges and the newest comment. @param {Thread} t */
+/** One thread's part of the batch file: the lines, the earlier exchanges and the newest comment. @param {Thread} t */
 export const commentNote = (t) => `Review comment ${t.id}. ${body(t)}`;
-
-/** The one line typed into the agent's terminal. hc send turns every newline into Enter, so the comment itself goes in a file. @param {Thread} t @param {string} path the comment file */
-export const agentLine = (t, path) => `[Review comment ${t.id}] Read ${path}, answer with: hreview reply ${t.id} "<your answer>". If it asks for a change, make it in your worktree, commit it, and say what you changed in the reply.`;
 
 /** The prompt for claude -p when no agent owns the view. @param {Thread} t */
 export const claudePrompt = (t) => `A review comment. ${body(t)}`;

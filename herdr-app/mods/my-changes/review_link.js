@@ -62,9 +62,9 @@ export function takeToggle(host) {
 export function publishThreads(host) {
   const tab = focused()?.tab;
   if (isReviewPane() || !tab || !host.root || !host.open || !findReviewPane(panes(), tab)) return;
-  const value = { root: host.root, path: host.open, threads: host.comments.forFile(host.open) };
+  const value = { root: host.root, path: host.open, threads: host.comments.forFile(host.open), drafts: host.comments.drafts() };
   if (JSON.stringify(value) !== JSON.stringify(shared(threadsKey(tab)))) setShared(threadsKey(tab), value);
 }
 
-/** In the review pane: the panel's threads for the file it shows, or null. @param {string | null} root @param {string | null} path */
+/** In the review pane: the panel's threads for the file it shows and its draft count, or null. @param {string | null} root @param {string | null} path */
 export const paneThreads = (root, path) => (root && path ? parseShared(shared(threadsKey(String(props()?.tab ?? ""))), root, path) : null);

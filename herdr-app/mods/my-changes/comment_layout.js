@@ -1,6 +1,6 @@
 // What an inline thread draws, line by line, and where threads sit among the diff rows. The virtual list places rows by heights the script states, so a thread's text is wrapped here and its height follows from its line count. Pure: no herdr imports, so node can test it.
 
-import { waiting } from "./comment_threads.js";
+import { waiting, isDraft } from "./comment_threads.js";
 import { anchorLabel, locate } from "./comment_anchor.js";
 
 /** @typedef {import("./comment_threads.js").Thread} Thread */
@@ -38,6 +38,7 @@ function wrapped(text, cols, tone, max = Infinity) {
 
 /** @param {import("./comment_threads.js").Exchange} e @returns {[string, Tone]} */
 function answerOf(e) {
+  if (e.status === "draft") return ["Draft: not sent until you click Send", "hint"];
   if (e.status === "held") return [`Waiting for ${e.to?.name ?? "the agent"} to be free…`, "wait"];
   if (e.status === "sent") return [`Sent to ${e.to?.name ?? "the agent"}`, "wait"];
   if (e.status === "pending") return ["Thinking…", "wait"];
@@ -58,7 +59,8 @@ export function threadLines(t, cols, { collapsed, outdated }) {
     if (e.status === "done" && e.to) out.push({ text: `${e.to.name}:`, tone: "who" });
     out.push(...wrapped(text, cols, tone, MAX_ANSWER_LINES));
   }
-  out.push({ text: waiting(t) ? "Click to collapse, resolve or delete" : "Click to reply, collapse, resolve or delete", tone: "hint" });
+  const hint = isDraft(t) ? "Click to edit, send or discard the draft" : waiting(t) ? "Click to collapse, resolve or delete" : "Click to reply, collapse, resolve or delete";
+  out.push({ text: hint, tone: "hint" });
   return out;
 }
 

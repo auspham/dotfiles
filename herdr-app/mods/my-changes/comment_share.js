@@ -6,20 +6,22 @@ import { TOGGLE_TTL_MS } from "./review_pane.js";
 
 /** @typedef {import("./comment_threads.js").Thread} Thread */
 /** @typedef {import("./comment_anchor.js").Anchor} Anchor */
-/** @typedef {{ root: string, path: string, threads: Thread[] }} SharedThreads */
-/** @typedef {{ op: "add", root: string, path: string, anchor: Anchor, text: string, ts: number } | { op: "reply" | "resolve" | "reopen" | "delete", root: string, path: string, thread: string, text: string, ts: number }} CommentRequest */
+/** drafts: unsent comments in every file, for the pane's Send button. */
+/** @typedef {{ root: string, path: string, threads: Thread[], drafts: number }} SharedThreads */
+/** @typedef {{ op: "add", root: string, path: string, anchor: Anchor, text: string, ts: number } | { op: "send", root: string, path: string, text: string, ts: number } | { op: "reply" | "edit" | "discard" | "resolve" | "reopen" | "delete", root: string, path: string, thread: string, text: string, ts: number }} CommentRequest */
 
 export const COMMENT_KEY = "review.comment";
-export const OPS = ["add", "reply", "resolve", "reopen", "delete"];
+export const OPS = ["add", "send", "reply", "edit", "discard", "resolve", "reopen", "delete"];
 
 /** The shared key that carries one tab's threads for its open file. @param {string} tab */
 export const threadsKey = (tab) => `review.threads.${tab}`;
 
-/** Threads the pane received, or null unless they are for the folder and file it shows. @param {unknown} v @param {string} root @param {string} path @returns {Thread[] | null} */
+/** Threads and the draft count the pane received, or null unless they are for the folder and file it shows. @param {unknown} v @param {string} root @param {string} path @returns {{ threads: Thread[], drafts: number } | null} */
 export function parseShared(v, root, path) {
   const s = /** @type {any} */ (v);
   if (!s || typeof s !== "object" || s.root !== root || s.path !== path) return null;
-  return parseThreads(s.threads).filter((t) => t.path === path);
+  const drafts = Number.isInteger(s.drafts) && s.drafts >= 0 ? s.drafts : 0;
+  return { threads: parseThreads(s.threads).filter((t) => t.path === path), drafts };
 }
 
 const isText = (v) => typeof v === "string" && v.length > 0;
@@ -32,6 +34,7 @@ export function parseRequest(v) {
     const anchor = parseAnchor(r.anchor);
     return anchor && r.text.trim() ? { op: "add", root: r.root, path: r.path, anchor, text: r.text, ts: r.ts } : null;
   }
+  if (r.op === "send") return { op: "send", root: r.root, path: r.path, text: "", ts: r.ts };
   return isText(r.thread) ? { op: r.op, root: r.root, path: r.path, thread: r.thread, text: r.text, ts: r.ts } : null;
 }
 

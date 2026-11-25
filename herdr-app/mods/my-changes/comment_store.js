@@ -1,12 +1,13 @@
 // The comment threads a Changes view shows. The side panel owns them (localStorage per folder and range); the review pane mirrors the panel's and sends it requests through shared state.
 
 import { shared, setShared } from "herdr";
-import { parseThreads, settleAfterReload, newThread, addReply, setResolved, removeThread, threadId, waiting } from "./comment_threads.js";
+import { parseThreads, settleAfterReload, newThread, addReply, editDraft, discardDraft, setResolved, removeThread, threadId, waiting, isDraft } from "./comment_threads.js";
 import { COMMENT_KEY, requestToApply } from "./comment_share.js";
+import { draftsOf } from "./comment_batch.js";
 
 /** @typedef {import("./comment_threads.js").Thread} Thread */
 /** @typedef {import("./comment_anchor.js").Anchor} Anchor */
-/** @typedef {(key: string, id: string, cx: any) => void} Deliver sends a thread's newest comment */
+/** @typedef {(cx: any) => unknown} Send sends every draft as one batch */
 
 const readJson = (key) => { try { return JSON.parse(localStorage.getItem(key) ?? "null"); } catch { return null; } };
 const writeJson = (key, value) => { try { localStorage.setItem(key, JSON.stringify(value)); } catch { /* storage can be unavailable */ } };
@@ -16,7 +17,7 @@ export const storeKey = (root, range) => `comments:${root}:${range}`;
 
 export class CommentStore {
   /** @param {boolean} mirror true in the review pane, which never writes storage */
-  constructor(mirror) { this.mirror = mirror; this.key = null; /** @type {Thread[]} */ this.threads = []; this.collapsed = new Set(); this.version = 0; this.seen = null; }
+  constructor(mirror) { this.mirror = mirror; this.key = null; /** @type {Thread[]} */ this.threads = []; this.collapsed = new Set(); this.version = 0; this.seen = null; this.mirrorDrafts = 0; }
 
   /** Loads the threads for a folder and range when they change. Owner only. @param {string} root @param {string} range */
   sync(root, range) {
@@ -25,11 +26,11 @@ export class CommentStore {
     this.key = key; this.threads = settleAfterReload(parseThreads(readJson(key))); this.version++;
   }
 
-  /** In the pane: takes the threads the panel published, when they differ. @param {Thread[] | null} threads */
-  mirrorFrom(threads) {
-    const next = threads ?? [];
-    if (JSON.stringify(next) === JSON.stringify(this.threads)) return false;
-    this.threads = next; this.version++;
+  /** In the pane: takes the threads and draft count the panel published, when they differ. @param {{ threads: Thread[], drafts: number } | null} got */
+  mirrorFrom(got) {
+    const next = got?.threads ?? [], drafts = got?.drafts ?? 0;
+    if (drafts === this.mirrorDrafts && JSON.stringify(next) === JSON.stringify(this.threads)) return false;
+    this.threads = next; this.mirrorDrafts = drafts; this.version++;
     return true;
   }
 
@@ -40,6 +41,12 @@ export class CommentStore {
     writeJson(key, this.threads);
   }
 
+  /** The threads stored under `key`, on screen or not. @param {string} key */
+  threadsAt(key) { return key === this.key ? this.threads : parseThreads(readJson(key)); }
+
+  /** Unsent comments in every file of this view; the pane only has the count the panel published. */
+  drafts() { return this.mirror ? this.mirrorDrafts : draftsOf(this.threads).length; }
+
   /** @param {string} path */
   forFile(path) { return this.threads.filter((t) => t.path === path); }
   /** @param {string} id */
@@ -49,32 +56,36 @@ export class CommentStore {
   /** Collapse is each view's own, so it never round-trips. @param {string} id */
   toggle(id) { if (!this.collapsed.delete(id)) this.collapsed.add(id); this.version++; }
 
-  /** A new thread on `anchor`, then its delivery. From the pane, a request to the panel. @param {{ root: string, path: string, anchor: Anchor, text: string }} spec @param {Deliver} deliver @param {any} cx */
-  add({ root, path, anchor, text }, deliver, cx) {
+  /** A new thread on `anchor`, saved as a draft until Send. From the pane, a request to the panel. @param {{ root: string, path: string, anchor: Anchor, text: string }} spec */
+  add({ root, path, anchor, text }) {
     if (this.mirror) { setShared(COMMENT_KEY, { op: "add", root, path, anchor, text, ts: Date.now() }); return; }
-    const id = threadId(), key = this.key;
-    this.update(key, (ts) => [...ts, newThread({ id, path, anchor, q: text, now: Date.now() })]);
-    deliver(key, id, cx);
+    this.update(this.key, (ts) => [...ts, newThread({ id: threadId(), path, anchor, q: text, now: Date.now() })]);
   }
 
-  /** Reply, resolve, reopen or delete. From the pane, a request to the panel. @param {"reply" | "resolve" | "reopen" | "delete"} op @param {{ root: string, path: string, id: string, text?: string }} spec @param {Deliver} deliver @param {any} cx */
-  act(op, { root, path, id, text = "" }, deliver, cx) {
+  /** Sends every draft as one batch. From the pane, a request to the panel, which owns the threads. @param {{ root: string, path: string }} where @param {Send} send @param {any} cx */
+  send({ root, path }, send, cx) {
+    if (this.mirror) { setShared(COMMENT_KEY, { op: "send", root, path, text: "", ts: Date.now() }); return null; }
+    return send(cx);
+  }
+
+  /** Reply (a new draft), edit or discard the draft, resolve, reopen or delete. From the pane, a request to the panel. @param {"reply" | "edit" | "discard" | "resolve" | "reopen" | "delete"} op @param {{ root: string, path: string, id: string, text?: string }} spec */
+  act(op, { root, path, id, text = "" }) {
     if (this.mirror) { setShared(COMMENT_KEY, { op, root, path, thread: id, text, ts: Date.now() }); return; }
     const thread = this.find(id);
-    if (!thread || (op === "reply" && (!text.trim() || waiting(thread)))) return;
-    const change = { reply: (ts) => addReply(ts, id, text, Date.now()), resolve: (ts) => setResolved(ts, id, true), reopen: (ts) => setResolved(ts, id, false), delete: (ts) => removeThread(ts, id) }[op];
-    const key = this.key;
-    this.update(key, change);
-    if (op === "reply") deliver(key, id, cx);
+    // One draft per thread: a second reply would stack, so the composer edits the draft instead.
+    if (!thread || (["reply", "edit"].includes(op) && !text.trim()) || (op === "reply" && (waiting(thread) || isDraft(thread)))) return;
+    const change = { reply: (ts) => addReply(ts, id, text, Date.now()), edit: (ts) => editDraft(ts, id, text), discard: (ts) => discardDraft(ts, id), resolve: (ts) => setResolved(ts, id, true), reopen: (ts) => setResolved(ts, id, false), delete: (ts) => removeThread(ts, id) }[op];
+    this.update(this.key, change);
   }
 
-  /** In the panel: applies the pane's newest request once. @param {string | null} root @param {Deliver} deliver @param {any} cx @returns {boolean} whether one applied */
-  takeRequest(root, deliver, cx) {
+  /** In the panel: applies the pane's newest request once. @param {string | null} root @param {Send} send @param {any} cx @returns {boolean} whether one applied */
+  takeRequest(root, send, cx) {
     const { request, seen } = requestToApply(shared(COMMENT_KEY), this.seen, root, Date.now());
     this.seen = seen;
     if (!request || this.mirror) return false;
-    if (request.op === "add") this.add({ root: request.root, path: request.path, anchor: request.anchor, text: request.text }, deliver, cx);
-    else this.act(request.op, { root: request.root, path: request.path, id: request.thread, text: request.text }, deliver, cx);
+    if (request.op === "add") this.add(request);
+    else if (request.op === "send") send(cx);
+    else this.act(request.op, { root: request.root, path: request.path, id: request.thread, text: request.text });
     return true;
   }
 }
