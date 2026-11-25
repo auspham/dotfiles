@@ -19,3 +19,10 @@ export function reviewQueue(kids) {
   const heading = waiting.length ? `Waiting for your review (${waiting.length})` : "Nothing is waiting for your review";
   return { heading, waiting, rest: kids.filter((k) => !k.yours).map(queued) };
 }
+
+/** The base branch a coordinator's child forked from, when `terminal` is one working under `root`; null otherwise, or when the label would read as a git option. Pure. @param {{ cwd?: string, foreground?: { cwd?: string }, labels?: Record<string, string> } | undefined} terminal @param {string} root @returns {string | null} */
+export function childBase(terminal, root) {
+  const cwd = terminal?.foreground?.cwd ?? terminal?.cwd ?? "", base = terminal?.labels?.base;
+  if (terminal?.labels?.role !== "child" || typeof base !== "string" || !base || base.startsWith("-")) return null;
+  return cwd === root || cwd.startsWith(`${root}/`) ? base : null;
+}

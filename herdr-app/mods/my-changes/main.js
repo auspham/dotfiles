@@ -5,6 +5,7 @@ import { langFor, highlightRows, hashLines, wrapTokens } from "./highlight.js";
 import { coordinatorNote } from "./coordinator.js";
 import { GuideSource } from "./guide_view.js";
 import { guideBase } from "./guide.js";
+import { childBase } from "./children.js";
 import { LEVELS, LEVEL_LABEL, VERDICT_SCHEMA, pathFlags, diffFlags, isTest, isCode, testsChangedCode, levelOf, splitDiff, triagePrompt } from "./triage.js";
 import { followFocus } from "./review_pane.js";
 import { isReviewPane, followedTerminal, paneLocation, paneShown, openReviewPane, publishReview, publishThreads, paneThreads, requestToggle, takeToggle } from "./review_link.js";
@@ -154,7 +155,7 @@ export default class Changes extends View {
     if (props()?.menu) return;
     this.files = []; this.rows = []; this.diffWidth = 0; this.handle = cx.focus_handle(); this.hadFocus = false;
     cx.timer.every(200, (cx) => { const on = this.holds(); if (on !== this.hadFocus) { this.hadFocus = on; cx.notify(); } });
-    this.range = asRange(this.read("range")); this.mode = this.read("mode") === "split" ? "split" : "unified"; this.split = []; this.half = 300; this.ratio = clamp(Number(this.read("ratio")) || 0.5, 0.15, 0.85); this.diffW = 800; this.barW = 600; this.splitVersion = 0; this.drag = false; this.heights = []; this.marks = {}; this.base = null;
+    this.range = this.userRange = asRange(this.read("range")); this.mode = this.read("mode") === "split" ? "split" : "unified"; this.split = []; this.half = 300; this.ratio = clamp(Number(this.read("ratio")) || 0.5, 0.15, 0.85); this.diffW = 800; this.barW = 600; this.splitVersion = 0; this.drag = false; this.heights = []; this.marks = {}; this.base = null;
     this.question = InputState.new({ placeholder: "Ask about this change, or ask for a fix" });
     this.question.on("change", (_e, cx) => { const has = Boolean(this.question.value().trim()); if (has !== this.hasQuestion) { this.hasQuestion = has; cx.notify(); } });
     this.question.on("submit", (_e, cx) => this.ask("inline", cx));
@@ -217,13 +218,16 @@ export default class Changes extends View {
   read(name) { try { return localStorage.getItem(name); } catch { return null; } }
   write(name, value) { try { localStorage.setItem(name, value); } catch { /* storage can be unavailable */ } }
 
-  // The branch this one forked from: the coordinator guide's fork point when it is an ancestor of HEAD, else the first of the usual names that exists and is not HEAD itself.
-  async findBase(git) {
+  // The branch this one forked from: the coordinator guide's fork point when it is an ancestor of HEAD, else a child's own fork point from its base label, else the first of the usual names that exists and is not HEAD itself.
+  async findBase(git, child) {
     const fromGuide = guideBase(this.guide.guide);
     if (fromGuide && (await git(["merge-base", "--is-ancestor", fromGuide.rev, "HEAD"])).code === 0) { this.baseAt = 0; return (this.base = fromGuide); }
-    if (this.baseAt && Date.now() - this.baseAt < 30000 && this.baseRoot === this.root) return this.base;
-    let found = null;
-    for (const ref of BASES) {
+    // A plain terminal can share a child's worktree, so the cache is per root and child base.
+    const cacheKey = `${this.root}\0${child ?? ""}`;
+    if (this.baseAt && Date.now() - this.baseAt < 30000 && this.baseRoot === cacheKey) return this.base;
+    const fork = child ? await git(["merge-base", "HEAD", child]) : null;
+    let found = fork?.code === 0 && fork.stdout.trim() ? { name: child, rev: fork.stdout.trim() } : null;
+    for (const ref of found ? [] : BASES) {
       const ok = await git(["rev-parse", "--verify", "--quiet", `${ref}^{commit}`]);
       if (ok.code !== 0) continue;
       const mb = await git(["merge-base", "HEAD", ref]);
@@ -233,7 +237,7 @@ export default class Changes extends View {
       found = { name: (target || ref).replace(/^origin\//, ""), rev: mb.stdout.trim() };
       break;
     }
-    this.base = found; this.baseAt = Date.now(); this.baseRoot = this.root;
+    this.base = found; this.baseAt = Date.now(); this.baseRoot = cacheKey;
     return found;
   }
 
@@ -273,7 +277,7 @@ export default class Changes extends View {
   }
 
   lastKey() { return `last:${this.root}`; }
-  rememberLast() { if (this.root && this.open) { this.lastPath = this.open; this.write(this.lastKey(), JSON.stringify({ path: this.open, range: this.range })); } }
+  rememberLast() { if (this.root && this.open) { this.lastPath = this.open; this.write(this.lastKey(), JSON.stringify({ path: this.open, range: this.userRange })); } }
 
   // Which file to open when a folder's panel loads: one just asked for from the Agents list, else the one left open last time, else the first.
   initialFile(files) {
@@ -791,6 +795,7 @@ export default class Changes extends View {
   }
 
   setRange(range, cx) {
+    this.userRange = range;
     if (this.range === range) return;
     this.range = range; this.write("range", range);
     if (this.root && this.lastPath) this.write(this.lastKey(), JSON.stringify({ path: this.lastPath, range }));
@@ -831,11 +836,15 @@ export default class Changes extends View {
         const head = await git(["rev-parse", "--verify", "HEAD"]);
         this.root = root;
         if (await this.guide.sync(root, head.stdout.trim(), on)) this.view = "risk";
+        const child = childBase(terminals().find((x) => x.address === followedTerminal()), root);
         if (this.restoredFor !== root) {
-          this.restoredFor = root;
+          this.restoredFor = root; this.range = this.userRange;
           try { const last = JSON.parse(this.read(this.lastKey()) ?? "null"); if (RANGES.includes(last?.range)) this.range = last.range; this.lastPath = last?.path ?? null; } catch { this.lastPath = null; }
+          // A child's whole work is everything since its fork point; what the user last picked stays remembered.
+          this.userRange = this.range;
+          if (child) this.range = "branch";
         }
-        const base = head.code === 0 ? await this.findBase(git) : null;
+        const base = head.code === 0 ? await this.findBase(git, child) : null;
         const parent = head.code === 0 ? await this.findParent(git) : null;
         const against = this.range === "branch" && base ? base.rev : this.range === "commit" && parent ? parent.rev : "HEAD";
         this.against = against;
@@ -931,7 +940,7 @@ export default class Changes extends View {
     this.sel = null; this.composer = null;
     this.open = this.open === path && !force ? null : path;
     if (this.open) for (const dir of [...this.foldedDirs]) if (this.open.startsWith(`${dir.slice(dir.indexOf("|") + 1)}/`)) this.foldedDirs.delete(dir);
-    if (this.open) { this.scrollThreads = true; this.lastPath = this.open; this.write(this.lastKey(), JSON.stringify({ path: this.open, range: this.range })); } this.setLines([]); this.note = null;
+    if (this.open) { this.scrollThreads = true; this.lastPath = this.open; this.write(this.lastKey(), JSON.stringify({ path: this.open, range: this.userRange })); } this.setLines([]); this.note = null;
     this.closed = !this.open;
     publishReview(this);
     const context = this.context;
