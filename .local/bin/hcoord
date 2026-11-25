@@ -2,11 +2,12 @@
 # hcoord: how a coordinator agent launches, watches and stops its child agents in herdr.
 # Each child gets its own tab and its own git worktree, so parallel work never clashes.
 #   hcoord spawn <name> "<task>" [--model M] [--effort E] [--repo DIR] [--base BRANCH]   (model and effort: the Team panel's choice unless given)
-#   hcoord ls [--json]          hcoord diff <name> [--stat]
+#   hcoord ls [--json]          hcoord diff <name> [--stat]   (diff works on any child in the space)
 #   hcoord review <name> approved|changes|pending|reviewing|yours [note]
 #   hcoord handoff <name> [--summary TEXT]   (stdin: one "high|normal|skim<TAB>path<TAB>reason" per file; hands the committed work to the user)
 #   hcoord kill <name> [--worktree] [--force]
 #   hcoord adopt [--from <space-id>]   (take over the children recorded in a space's ledger, or report them orphaned)
+# review, handoff and kill act only on a child whose coord is the caller; a child name is unique across the space.
 # spawn, review, handoff and kill also append to $COORDINATOR_HOME/spaces/<space>/ledger.jsonl (default ~/.claude/coordinator), the record a new coordinator adopts from.
 set -euo pipefail
 
@@ -28,13 +29,17 @@ picked() {
   jq -r --arg s "$space" --arg k "$1" '.spaces[$s][$k] // empty' "$file" 2>/dev/null || true
 }
 
-# The terminal of the child with this task name.
+# The terminal of the child with this task name, whichever coordinator controls it.
+find_child() {
+  local t; t=$(hc ls --json --label role=child --label "herdr.space=$(label_of "$me" herdr.space)" --label "task=$1" | jq -r '.terminals[0].address // empty')
+  [ -n "$t" ] || die "no child named $1"
+  echo "$t"
+}
+# The terminal of a child the caller controls; only its controlling coordinator may change a child.
 child_of() {
-  local t
-  for t in $(children); do
-    if [ "$(label_of "$t" task)" = "$1" ]; then echo "$t"; return 0; fi
-  done
-  die "no child named $1"
+  local t coord; t=$(find_child "$1"); coord=$(label_of "$t" coord)
+  [ "$coord" = "$me" ] || die "$1 belongs to coordinator $coord; ask it over SendMessage"
+  echo "$t"
 }
 
 cmd_spawn() {
@@ -50,7 +55,8 @@ cmd_spawn() {
   [ -n "$effort" ] || effort=$(picked effort)
   local root; root=$(git -C "$repo" rev-parse --show-toplevel 2>/dev/null) || die "$repo is not in a git repository"
   base="${base:-$(git -C "$root" symbolic-ref --short HEAD 2>/dev/null || git -C "$root" rev-parse --short HEAD)}"
-  if (child_of "$name") >/dev/null 2>&1; then die "a child named $name already exists"; fi
+  if (find_child "$name") >/dev/null 2>&1; then die "a child named $name already exists in this space"; fi
+  if git -C "$root" show-ref --verify -q "refs/heads/agent/$name"; then die "branch agent/$name already exists"; fi
 
   local worktree="$root/.agent-worktrees/$name" exclude
   exclude="$(git -C "$root" rev-parse --path-format=absolute --git-common-dir)/info/exclude"
@@ -92,7 +98,7 @@ cmd_ls() {
 }
 
 cmd_diff() {
-  local t worktree base; t=$(child_of "${1:?name}")
+  local t worktree base; t=$(find_child "${1:?name}")
   worktree=$(label_of "$t" worktree); base=$(label_of "$t" base)
   git -C "$worktree" status --short
   git -C "$worktree" diff ${2:+--stat} "$(fork_point "$worktree" "$base")"
@@ -154,5 +160,5 @@ case "${1:-}" in
   handoff) shift; cmd_handoff "$@" ;;
   kill) shift; cmd_kill "$@" ;;
   adopt) shift; cmd_adopt "$@" ;;
-  *) sed -n '2,11p' "$0" | sed 's/^# \{0,1\}//'; exit 2 ;;
+  *) sed -n '2,12p' "$0" | sed 's/^# \{0,1\}//'; exit 2 ;;
 esac

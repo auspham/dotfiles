@@ -35,8 +35,8 @@ fx="$(dirname "$0")/../fx"; log="$(dirname "$0")/../calls.log"
 echo "herdr-app $*" >> "$log"
 case "$2" in
   tab.new)
-    n=$(( $(ls "$fx" | wc -l) + 8 ))
-    printf '{"address":"t%s","status":{"state":"working"},"labels":{"herdr.tab":"tb%s"}}' "$n" "$n" > "$fx/t$n.json"
+    n=$(( $(ls "$fx" | wc -l) + 8 )); space=$(sed -n 's/.*--space \([^ ]*\).*/\1/p' <<<"$*")
+    printf '{"address":"t%s","status":{"state":"working"},"labels":{"herdr.tab":"tb%s","herdr.space":"%s"}}' "$n" "$n" "$space" > "$fx/t$n.json"
     printf '{"space":"sp1","tab":"tb%s","terminal":"t%s"}' "$n" "$n" ;;
 esac
 STUB
@@ -207,5 +207,28 @@ calls | grep -qF 'Your coordinator is boss (terminal t5); report to it with Send
 : > "$root/calls.log"
 CLAUDE_SESSIONS_DIR="$root/none" TEST_ME=t5 run spawn untold "Task" >/dev/null
 calls | grep -qF 'Your coordinator is terminal t5.' || fail "without a session name it gets the terminal"
+
+# Many coordinators share a space: each changes only its own children, and any of them may read.
+for c in c1:spM:coordinator c2:spM:coordinator c3:spN:coordinator c4:spM:; do
+  IFS=: read -r a sp role <<<"$c"
+  jq -n --arg a "$a" --arg sp "$sp" --arg role "$role" '{address: $a, labels: ({"herdr.space": $sp} + (if $role == "" then {} else {role: $role} end))}' > "$fx/$a.json"
+done
+spm="$COORDINATOR_HOME/spaces/spM/ledger.jsonl"
+TEST_ME=c1 run spawn mine "Mine" >/dev/null
+mine_t=$(event spawn mine "$spm" | jq -r .terminal)
+TEST_ME=c2 run spawn theirs "Theirs" >/dev/null
+TEST_ME=c2 run spawn mine "Again" 2>/dev/null && fail "a child name is unique across the space"
+TEST_ME=c1 run spawn login-fix "Again" 2>/dev/null && fail "a name whose agent branch is left in the repo is refused"
+: > "$root/calls.log"
+refused_by_c1() { local msg; ! msg=$(TEST_ME=c2 run "$@" 2>&1 </dev/null) && grep -qF 'mine belongs to coordinator c1; ask it over SendMessage' <<<"$msg"; }
+refused_by_c1 review mine approved || fail "review refuses another coordinator's child and names it"
+refused_by_c1 handoff mine || fail "handoff refuses another coordinator's child and names it"
+refused_by_c1 kill mine --worktree --force || fail "kill refuses another coordinator's child and names it"
+[ "$(jq -r '.labels.review + .labels.coord' "$fx/$mine_t.json")" = pendingc1 ] || fail "a refused command changes no label"
+calls | grep -q 'hc kill' && fail "a refused kill stops nothing"
+[ -d "$repo/.agent-worktrees/mine" ] || fail "a refused kill keeps the worktree"
+echo peek > "$repo/.agent-worktrees/mine/peek.txt"; git -C "$repo/.agent-worktrees/mine" add peek.txt
+TEST_ME=c2 run diff mine | grep -q '^+peek' || fail "diff works on any child in the space"
+TEST_ME=c2 run ls | grep -q '^mine ' && fail "plain ls lists only the caller's own children"
 
 echo "hcoord: all checks passed"
