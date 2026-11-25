@@ -133,15 +133,31 @@ write_session s1 me-agent busy 100
 mkdir -p "$root/coord/spaces/spA"; printf 'Goal: ship the thing' > "$root/coord/spaces/spA/notes.md"
 run SessionStart s1 | context | grep -q 'Goal: ship the thing' || fail "a coordinator is shown its notes"
 cat > "$root/coord/spaces/spA/ledger.jsonl" <<'LEDGER'
-{"at":"1","event":"spawn","name":"alpha-child","space":"spA","space_name":"alpha"}
+{"at":"1","event":"spawn","name":"alpha-child","coord":"t1","space":"spA","space_name":"alpha"}
 this line is damaged {
-{"at":"2","event":"spawn","name":"done-child","space":"spA","space_name":"alpha"}
-{"at":"3","event":"kill","name":"done-child","space":"spA","space_name":"alpha"}
+{"at":"2","event":"spawn","name":"done-child","coord":"t1","space":"spA","space_name":"alpha"}
+{"at":"3","event":"kill","name":"done-child","coord":"t1","space":"spA","space_name":"alpha"}
+{"at":"4","event":"spawn","name":"their-child","coord":"t2","space":"spA","space_name":"alpha"}
+{"at":"5","event":"spawn","name":"lent-in","coord":"t2","space":"spA","space_name":"alpha"}
+{"at":"6","event":"lend","name":"lent-in","coord":"t2","to":"t1","from":"t2","space":"spA","space_name":"alpha"}
+{"at":"7","event":"spawn","name":"lent-out","coord":"t1","space":"spA","space_name":"alpha"}
+{"at":"8","event":"lend","name":"lent-out","coord":"t1","to":"t2","from":"t1","space":"spA","space_name":"alpha"}
+{"at":"9","event":"spawn","name":"came-back","coord":"t1","space":"spA","space_name":"alpha"}
+{"at":"10","event":"lend","name":"came-back","coord":"t1","to":"t2","from":"t1","space":"spA","space_name":"alpha"}
+{"at":"11","event":"return","name":"came-back","coord":"t2","to":"t1","from":"t2","space":"spA","space_name":"alpha"}
+{"at":"12","event":"spawn","name":"readopted","coord":"t2","space":"spA","space_name":"alpha"}
+{"at":"13","event":"lend","name":"readopted","coord":"t2","to":"t3","from":"t2","space":"spA","space_name":"alpha"}
+{"at":"14","event":"adopt","name":"readopted","coord":"t1","space":"spA","space_name":"alpha"}
 LEDGER
 out=$(run SessionStart s1 | context)
-grep -q 'alpha-child' <<<"$out" || fail "a coordinator is told about unadopted children in the ledger"
+grep -q 'alpha-child' <<<"$out" || fail "a coordinator is told about its unadopted children in the ledger"
 grep -q 'hcoord ls, then hcoord adopt' <<<"$out" || fail "and told to list then adopt them"
 grep -q 'done-child' <<<"$out" && fail "killed children are not listed"
+grep -q 'their-child' <<<"$out" && fail "another coordinator's children are not listed"
+grep -q 'lent-in' <<<"$out" || fail "a child lent to the reader is listed"
+grep -q 'lent-out' <<<"$out" && fail "a child the reader lent out is not listed"
+grep -q 'came-back' <<<"$out" || fail "a child returned to the reader is listed"
+grep -q 'readopted' <<<"$out" || fail "an adopt after a lend makes the adopter the controller"
 
 reset; enable spB
 terminal t1 spB s1 "me" /w/app; write_session s1 me-agent busy 100

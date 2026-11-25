@@ -89,7 +89,7 @@ if [ -n "$roster" ] || [ "$role" = coordinator ] || [ "$role" = child ]; then
       prefs=""; [ ! -f "$preferences" ] || prefs=$(head -c 3000 "$preferences")
       others=$(jq -r --argjson reg "$registry" 'map(select(.role == "coordinator") | "\($reg[.session].name // "unnamed") [\(.address)]") | join(", ")' <<<"$live")
       context+=$'\n'"$(coordinator_charter "$prefs" "$others")"
-      context+=$'\n'"$(coordinator_record "$spaces_dir/$space" "$space_name" "${own_name:-$HC_TERMINAL_ID}")" ;;
+      context+=$'\n'"$(coordinator_record "$spaces_dir/$space" "$space_name" "${own_name:-$HC_TERMINAL_ID}" "$HC_TERMINAL_ID")" ;;
     *) context+=$'\n'"$(peer_protocol)"$'\n'"$(notes_pointer "$spaces_dir/$space/notes.md")" ;;
   esac
 fi
