@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { validateGuide, parseGuide, guideEntry, guideStats, canFinish, headMoved, guidePath, notifyTarget, shouldFinish, finishOutcome, CHANGED, NOT_IN_GUIDE } from "../guide.js";
+import { validateGuide, parseGuide, guideEntry, guideStats, canFinish, headMoved, guidePath, notifyTarget, shouldFinish, finishOutcome, deliveryAction, undeliveredToast, HOLD_MS, CHANGED, NOT_IN_GUIDE } from "../guide.js";
 import { levelOf } from "../triage.js";
 
 const HEAD = "a".repeat(40);
@@ -62,5 +62,15 @@ assert.deepEqual(finishOutcome(true, true, "login"), { jump: true, note: "", toa
 assert.deepEqual(finishOutcome(true, false, "login"), { jump: true, note: "", toast: { title: "Marked login reviewed. Could not tell its coordinator.", level: "warning" } }, "the toast says so when the coordinator could not be told");
 assert.deepEqual(finishOutcome(false, false, "login"), { jump: false, note: "Could not mark it reviewed", toast: null }, "a failed label keeps the user on the child with a note");
 assert.deepEqual(finishOutcome(true, false, null), { jump: false, note: "Marked reviewed; could not tell the coordinator", toast: null }, "without a usable coord the user stays on the child and sees the note");
+
+assert.deepEqual(finishOutcome(true, false, "login", true), { jump: true, note: "", toast: { title: "Marked login reviewed. Will tell its coordinator when it is free.", level: "success" } }, "a message held for a blocked coordinator still jumps back and says it will tell it later");
+assert.equal(deliveryAction("working", 0), "send", "a busy coordinator is told at once, since it queues typed input");
+assert.equal(deliveryAction("idle", 0), "send");
+assert.equal(deliveryAction(null, 0), "send", "a coordinator without a status is told at once");
+assert.equal(deliveryAction("blocked", 0), "wait", "a blocked coordinator is not typed into, since its open dialog would swallow the text");
+assert.equal(deliveryAction("blocked", HOLD_MS - 1), "wait");
+assert.equal(deliveryAction("blocked", HOLD_MS), "give-up", "the message is dropped with a warning after ten minutes blocked");
+assert.equal(deliveryAction("working", HOLD_MS * 2), "send", "a coordinator freed late is still told");
+assert.deepEqual(undeliveredToast("login"), { title: "Could not tell the coordinator that login was reviewed. Tell it yourself.", level: "warning" }, "the give-up warning names the task");
 
 console.log("my-changes guide: all checks passed");

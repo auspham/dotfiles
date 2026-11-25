@@ -3,7 +3,7 @@
 import { div } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
 import { readTextFile, terminals, focused, exec, run, notify } from "herdr";
-import { guidePath, parseGuide, headMoved, guideEntry, guideStats, canFinish, notifyTarget, shouldFinish, finishOutcome } from "./guide.js";
+import { guidePath, parseGuide, headMoved, guideEntry, guideStats, canFinish, notifyTarget, shouldFinish, finishOutcome, deliveryAction, undeliveredToast, RETRY_MS } from "./guide.js";
 
 /** The guide in force for the Changes root, re-read when its file changes. */
 export class GuideSource {
@@ -39,8 +39,11 @@ export class GuideSource {
     cx.spawn(async (cx) => {
       try {
         const done = await exec("hc", ["label", this.address, "review=reviewed", "review_note=Reviewed by you"]).catch(() => null);
-        const sent = done?.code === 0 && target ? await exec("hc", ["send", target.coord, target.text]).catch(() => null) : null;
-        const out = finishOutcome(done?.code === 0, sent?.code === 0, target?.task ?? null);
+        const held = done?.code === 0 && target !== null && deliveryAction(coordStatus(target.coord), 0) === "wait";
+        const sent = done?.code === 0 && target && !held ? await exec("hc", ["send", target.coord, target.text]).catch(() => null) : null;
+        const out = finishOutcome(done?.code === 0, sent?.code === 0, target?.task ?? null, held);
+        // Its own task, so it outlives this click and does not depend on which child is focused later.
+        if (held) cx.spawn((cx) => deliverWhenFree(cx, target));
         // One GuideSource serves every child, so a jump clears the note rather than carry it to the next one.
         this.note = out.note;
         // A refresh racing the jump could fill the coordinator's pane with this child's files, hiding its list.
@@ -53,6 +56,18 @@ export class GuideSource {
 
   /** @param {string} path @param {string} sig @returns {import("./guide.js").GuideEntry | null} */
   entry(path, sig) { return this.guide ? guideEntry(this.guide, path, sig, headMoved(this.guide, this.head)) : null; }
+}
+
+/** @param {string} address @returns {string | null} */
+const coordStatus = (address) => terminals().find((x) => x.address === address)?.status ?? null;
+
+/** Sends the finish message once the coordinator is no longer blocked, or warns when it stays blocked too long. @param {any} cx @param {{ coord: string, task: string, text: string }} target */
+async function deliverWhenFree(cx, target) {
+  const start = Date.now();
+  let action = "wait";
+  while ((action = deliveryAction(coordStatus(target.coord), Date.now() - start)) === "wait") await cx.sleep(RETRY_MS);
+  const sent = action === "send" ? await exec("hc", ["send", target.coord, target.text]).catch(() => null) : null;
+  if (sent?.code !== 0) notify(undeliveredToast(target.task));
 }
 
 /** The banner, or null without a guide. @param {object} t theme @param {import("./guide.js").Guide | null} guide @param {ReturnType<typeof guideStats> | null} stats null outside the branch range, where counts mean nothing @param {{ label: string, run: Function }} onShow the Show-since button @param {{ note: string, busy: boolean, reviewed: boolean, run: Function }} onDone the Done reviewing button, its failure note, whether a finish is in flight and whether the child is already reviewed */

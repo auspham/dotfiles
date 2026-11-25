@@ -87,12 +87,25 @@ export function notifyTarget(labels) {
 
 /** @typedef {{ jump: boolean, note: string, toast: { title: string, level: "success" | "warning" } | null }} FinishOutcome */
 
-/** What the user sees after a Done reviewing click. With a coordinator to tell (`task` set), they go back to it and get a toast; without one they stay and see a note. @param {boolean} labelOk @param {boolean} sentOk @param {string | null} task the sanitized task, null without a usable coord @returns {FinishOutcome} */
-export function finishOutcome(labelOk, sentOk, task) {
+/** What the user sees after a Done reviewing click. With a coordinator to tell (`task` set), they go back to it and get a toast; without one they stay and see a note. @param {boolean} labelOk @param {boolean} sentOk @param {string | null} task the sanitized task, null without a usable coord @param {boolean} [held] the message waits for a blocked coordinator @returns {FinishOutcome} */
+export function finishOutcome(labelOk, sentOk, task, held = false) {
   if (!labelOk) return { jump: false, note: "Could not mark it reviewed", toast: null };
   if (!task) return { jump: false, note: "Marked reviewed; could not tell the coordinator", toast: null };
+  if (held) return { jump: true, note: "", toast: { title: `Marked ${task} reviewed. Will tell its coordinator when it is free.`, level: "success" } };
   const toast = sentOk
     ? { title: `Marked ${task} reviewed. Told its coordinator.`, level: "success" }
     : { title: `Marked ${task} reviewed. Could not tell its coordinator.`, level: "warning" };
   return { jump: true, note: "", toast };
 }
+
+export const RETRY_MS = 2000;
+export const HOLD_MS = 10 * 60 * 1000;
+
+/** Whether to send the finish message now. Text typed into a blocked coordinator lands in its open dialog and is lost, so wait until it is free, for at most HOLD_MS. @param {string | null | undefined} status the coordinator terminal's status @param {number} waitedMs @returns {"send" | "wait" | "give-up"} */
+export function deliveryAction(status, waitedMs) {
+  if (status !== "blocked") return "send";
+  return waitedMs >= HOLD_MS ? "give-up" : "wait";
+}
+
+/** The warning when a held message could not be delivered. @param {string} task */
+export const undeliveredToast = (task) => ({ title: `Could not tell the coordinator that ${task} was reviewed. Tell it yourself.`, level: /** @type {const} */ ("warning") });
