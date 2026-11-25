@@ -2,14 +2,16 @@
 
 import { waiting, isDraft } from "./comment_threads.js";
 import { anchorLabel, locate } from "./comment_anchor.js";
+import { threadChip } from "./comment_status.js";
 
 /** @typedef {import("./comment_threads.js").Thread} Thread */
-/** @typedef {"head" | "you" | "who" | "answer" | "wait" | "error" | "hint"} Tone */
-/** @typedef {{ text: string, tone: Tone }} Line */
+/** @typedef {"head" | "you" | "who" | "body" | "error" | "hint" | "gap" | "marker" | "add"} Tone */
+/** @typedef {{ text: string, tone: Tone, chip?: import("./comment_status.js").Chip }} Line */
 /** @typedef {{ after: number, key: string, h: number, thread?: Thread }} Block after: the row it sits under, -1 for the top */
 /** @typedef {{ row: number } | { block: Block }} Item */
 
-export const BLOCK_PAD = 10;
+// A block's vertical px beyond its lines: outer padding 2x5, card border 2x1, inner padding 2x4. comment_view.js draws exactly these.
+export const BLOCK_PAD = 20, GAP_H = 6;
 // A long answer is cut here inline; its full text stays in the store.
 export const MAX_ANSWER_LINES = 14;
 
@@ -36,36 +38,49 @@ function wrapped(text, cols, tone, max = Infinity) {
   return kept.map((s) => ({ text: s, tone }));
 }
 
-/** @param {import("./comment_threads.js").Exchange} e @returns {[string, Tone]} */
-function answerOf(e) {
-  if (e.status === "draft") return e.a ? [`${e.a} Send all tries again.`, "error"] : ["Queued: not sent until you click Send all", "hint"];
-  if (e.status === "held") return [`Waiting for ${e.to?.name ?? "the agent"} to be free…`, "wait"];
-  if (e.status === "sent") return [`Sent to ${e.to?.name ?? "the agent"}`, "wait"];
-  if (e.status === "pending") return ["Thinking…", "wait"];
-  return [e.a, e.status === "error" ? "error" : "answer"];
+/** The answer lines under a comment; a queued or waiting one has none, since the header's chip says so. @param {import("./comment_threads.js").Exchange} e @param {number} cols @returns {Line[]} */
+function answerLines(e, cols) {
+  if (e.status === "done") return [{ text: e.to?.name ?? "Claude", tone: "who" }, ...wrapped(e.a, cols, "body", MAX_ANSWER_LINES)];
+  if (e.status === "error") return wrapped(e.a, cols, "error", MAX_ANSWER_LINES);
+  if (e.status === "draft" && e.a) return wrapped(`${e.a} Send all tries again.`, cols, "error");
+  return [];
 }
 
-/** The one line a resolved or collapsed thread shrinks to. @param {Thread} t */
-const markerText = (t) => `${t.resolved ? "✓ Resolved" : `▸ ${t.exchanges.length} comment${t.exchanges.length > 1 ? "s" : ""}`} · ${t.exchanges[0].q.split("\n")[0]}`;
+/** "Line 3" or "Lines 6-9". @param {Thread} t */
+const where = (t) => anchorLabel(t.anchor).replace(/^l/, "L");
 
-/** The text lines an inline thread draws at `cols` columns. @param {Thread} t @param {number} cols @param {{ collapsed: boolean, outdated: boolean }} state @returns {Line[]} */
+/** @param {number} n */
+const replies = (n) => `${n} repl${n === 1 ? "y" : "ies"}`;
+
+/** The one line a resolved or collapsed thread shrinks to. @param {Thread} t */
+function markerText(t) {
+  const first = t.exchanges[0].q.split("\n")[0];
+  if (t.resolved) return `✓ Resolved · ${where(t)} · ${first}`;
+  return `▸ ${where(t)} · ${replies(t.exchanges.filter((e) => e.status === "done").length)} · ${first}`;
+}
+
+/** @param {Thread} t */
+const hintOf = (t) => (isDraft(t) ? "Click to edit or delete" : waiting(t) ? "Click to collapse or delete" : "Click to reply or resolve");
+
+/** The text lines an inline thread draws at `cols` columns; the header carries the status chip. @param {Thread} t @param {number} cols @param {{ collapsed: boolean, outdated: boolean }} state @returns {Line[]} */
 export function threadLines(t, cols, { collapsed, outdated }) {
-  if (t.resolved || collapsed) return [{ text: markerText(t).slice(0, Math.max(8, cols)), tone: "head" }];
-  const head = outdated ? `Outdated: ${anchorLabel(t.anchor)} are no longer in this diff` : `Comment on ${anchorLabel(t.anchor)}`;
-  const out = [{ text: head.slice(0, Math.max(8, cols)), tone: /** @type {Tone} */ ("head") }];
-  for (const e of t.exchanges) {
-    out.push(...wrapped(`You: ${e.q}`, cols, "you"));
-    const [text, tone] = answerOf(e);
-    if (e.status === "done" && e.to) out.push({ text: `${e.to.name}:`, tone: "who" });
-    out.push(...wrapped(text, cols, tone, MAX_ANSWER_LINES));
-  }
-  const hint = isDraft(t) ? "Click to edit or delete" : waiting(t) ? "Click to collapse, resolve or delete" : "Click to reply, collapse, resolve or delete";
-  out.push({ text: hint, tone: "hint" });
+  const fit = (text) => text.slice(0, Math.max(8, cols));
+  if (t.resolved || collapsed) return [{ text: fit(markerText(t)), tone: "marker" }];
+  /** @type {Line[]} */
+  const out = [{ text: fit(outdated ? `${where(t)}, no longer in this diff` : where(t)), tone: "head", chip: threadChip(t) }];
+  t.exchanges.forEach((e, i) => {
+    if (i > 0) out.push({ text: "", tone: "gap" });
+    out.push({ text: "You", tone: "you" }, ...wrapped(e.q, cols, "body"), ...answerLines(e, cols));
+  });
+  out.push({ text: hintOf(t), tone: "hint" });
   return out;
 }
 
-/** A block's height in px for its line count. @param {number} lines @param {number} lineH */
-export const blockHeight = (lines, lineH) => lines * lineH + BLOCK_PAD;
+/** A line's height in px; a gap between exchanges is a short spacer. @param {Line} l @param {number} lineH */
+export const lineHeight = (l, lineH) => (l.tone === "gap" ? GAP_H : lineH);
+
+/** A block's height in px for its lines. @param {Line[]} lines @param {number} lineH */
+export const blockHeight = (lines, lineH) => lines.reduce((h, l) => h + lineHeight(l, lineH), BLOCK_PAD);
 
 /** How many characters of thread text fit in a block `width` px wide. @param {number} width @param {number} charW @param {number} inset px taken by the block's margin, rail and padding */
 export const blockCols = (width, charW, inset) => Math.max(8, Math.floor((width - inset) / charW));
