@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { newThread, addReply, patchLast, patchMany, editDraft, discardDraft, isDraft, setResolved, removeThread, lastOf, waiting, settleAfterReload, parseThreads, threadId } from "../comment_threads.js";
+import { newThread, addReply, patchLast, patchMany, editDraft, discardDraft, isDraft, setResolved, removeThread, lastOf, waiting, settleAfterReload, parseThreads, threadId, storeKey, loadThreads } from "../comment_threads.js";
 import { draftsOf, stillThere, batchPath, batchNote, batchLine, sentSuffix } from "../comment_batch.js";
 import { parseReplies, applyReplies, repliesPath, listening } from "../comment_replies.js";
 import { pickTarget, commentNote, claudePrompt } from "../comment_prompt.js";
@@ -109,5 +109,23 @@ assert.equal(batchLine(1, path).slice(0, 20), "[Review: 1 comment] ", "one comme
 assert.equal(sentSuffix(3), " (3 comments sent to the child)", "the coordinator hears how many comments went to the child");
 assert.equal(sentSuffix(1), " (1 comment sent to the child)", "one comment sent to the child is singular");
 assert.equal(sentSuffix(0), "", "with nothing sent to the child the coordinator's message is unchanged");
+
+const root = "/w/replay-api", fake = (entries) => new Map(Object.entries(entries).map(([k, v]) => [k, JSON.parse(JSON.stringify(v))]));
+const loadFrom = (store) => {
+  const got = loadThreads((k) => store.get(k) ?? null, root);
+  if (got.write) { store.set(storeKey(root), got.write); for (const k of got.drop) store.delete(k); }
+  return got;
+};
+const onCommit = newThread({ id: "cdef456", path: "src/b.js", anchor, q: "And this?", now: 1500 });
+const store = fake({ [`comments:${root}:work`]: [t0], [`comments:${root}:commit`]: [onCommit] });
+assert.deepEqual(loadFrom(store).threads.map((t) => t.id), ["cabc123", "cdef456"], "threads written under Uncommitted still show under Since base");
+assert.deepEqual([...store.keys()], [storeKey(root)], "the legacy per-range keys are removed once their threads are saved under the folder");
+const again = loadFrom(store);
+assert.deepEqual([again.write, again.drop, again.threads.map((t) => t.id)], [null, [], ["cabc123", "cdef456"]], "legacy per-range threads are merged once");
+const older = fake({ [`comments:${root}:work`]: [t0], [`comments:${root}:branch`]: [replied] });
+assert.equal(loadFrom(older).threads[0].exchanges.length, 2, "a thread kept under two ranges keeps its newer copy");
+store.set(`comments:${root}:work`, [newThread({ id: "cghi789", path: "src/c.js", anchor, q: "Stale?", now: 1700 })]);
+assert.deepEqual(loadFrom(store).threads.map((t) => t.id), ["cabc123", "cdef456"], "a legacy key left behind does not come back once the folder has its own");
+assert.ok(store.has(`comments:${root}:work`), "loading never touches legacy keys once the folder has its own");
 
 console.log("my-changes comment threads: all checks passed");

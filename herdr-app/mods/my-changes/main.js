@@ -879,7 +879,7 @@ export default class Changes extends View {
         if (this.flagsFor !== `${root}|${against}`) { this.flagsFor = `${root}|${against}`; this.flags = new Map(); }
         try { await this.updateFlags(git, files, against, head.code === 0, root, on); } catch { /* flags are a hint; the list still shows */ }
         if (key() !== context) return;
-        this.loadMarks(); this.loadVerdicts(); this.comments.sync(root, this.range);
+        this.loadMarks(); this.loadVerdicts(); this.comments.sync(root);
         if (this.threadsRoot !== root) { this.threadsRoot = root; this.loadChat(); }
         if (key() !== context) return;
         this.on = on; this.hasHead = head.code === 0; this.files = files; this.limited = entries.length > 1000; this.error = null;

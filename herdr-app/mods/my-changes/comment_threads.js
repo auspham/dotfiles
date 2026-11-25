@@ -98,3 +98,22 @@ export function parseThreads(raw) {
   for (const t of raw.slice(0, MAX_THREADS).map(parseThread)) if (t && !seen.has(t.id)) { seen.add(t.id); out.push(t); }
   return out;
 }
+
+/** The storage key for a folder's threads. Every range shares it, so a thread shows wherever its file does and re-anchors by its text. @param {string} root */
+export const storeKey = (root) => `comments:${root}`;
+
+/** The per-range keys threads were stored under before. @param {string} root */
+const legacyKeys = (root) => ["work", "commit", "branch"].map((range) => `comments:${root}:${range}`);
+
+/** The copy with the later last exchange; on a tie the first one read. @param {Thread} a @param {Thread} b */
+const newer = (a, b) => (lastOf(b).at > lastOf(a).at ? b : a);
+
+/** A folder's threads read through `read`. When the folder has no key yet, the legacy per-range threads merge into it, once: `write` is what to store under the folder key, and `drop` the legacy keys to remove after that write lands. @param {(key: string) => unknown} read @param {string} root @returns {{ threads: Thread[], write: Thread[] | null, drop: string[] }} */
+export function loadThreads(read, root) {
+  const stored = read(storeKey(root));
+  if (stored !== null) return { threads: parseThreads(stored), write: null, drop: [] };
+  const drop = legacyKeys(root), byId = new Map();
+  for (const t of drop.flatMap((key) => parseThreads(read(key)))) byId.set(t.id, byId.has(t.id) ? newer(byId.get(t.id), t) : t);
+  const threads = [...byId.values()].slice(0, MAX_THREADS);
+  return { threads, write: threads, drop };
+}

@@ -1,7 +1,7 @@
-// The comment threads a Changes view shows. The side panel owns them (localStorage per folder and range); the review pane mirrors the panel's and sends it requests through shared state.
+// The comment threads a Changes view shows. The side panel owns them (localStorage per folder, shared by every range); the review pane mirrors the panel's and sends it requests through shared state.
 
 import { shared, setShared } from "herdr";
-import { parseThreads, settleAfterReload, newThread, addReply, editDraft, discardDraft, setResolved, removeThread, threadId, waiting, isDraft } from "./comment_threads.js";
+import { parseThreads, settleAfterReload, loadThreads, storeKey, newThread, addReply, editDraft, discardDraft, setResolved, removeThread, threadId, waiting, isDraft } from "./comment_threads.js";
 import { COMMENT_KEY, requestToApply } from "./comment_share.js";
 import { draftsOf } from "./comment_batch.js";
 
@@ -10,20 +10,24 @@ import { draftsOf } from "./comment_batch.js";
 /** @typedef {(cx: any) => unknown} Send sends every draft as one batch */
 
 const readJson = (key) => { try { return JSON.parse(localStorage.getItem(key) ?? "null"); } catch { return null; } };
-const writeJson = (key, value) => { try { localStorage.setItem(key, JSON.stringify(value)); } catch { /* storage can be unavailable */ } };
+const writeJson = (key, value) => { try { localStorage.setItem(key, JSON.stringify(value)); return true; } catch { return false; } };
 
-/** The storage key for a folder and range. The range name, not its commit, so threads outlive a new commit and re-anchor. @param {string} root @param {string} range */
-export const storeKey = (root, range) => `comments:${root}:${range}`;
+/** A folder's threads, merging the legacy per-range keys into its own key on first load. They are removed only once that write lands. @param {string} root */
+function readThreads(root) {
+  const { threads, write, drop } = loadThreads(readJson, root);
+  if (write && writeJson(storeKey(root), write)) for (const key of drop) try { localStorage.removeItem(key); } catch { /* storage can be unavailable */ }
+  return threads;
+}
 
 export class CommentStore {
   /** @param {boolean} mirror true in the review pane, which never writes storage */
   constructor(mirror) { this.mirror = mirror; this.key = null; /** @type {Thread[]} */ this.threads = []; this.collapsed = new Set(); this.version = 0; this.seen = null; this.mirrorDrafts = 0; }
 
-  /** Loads the threads for a folder and range when they change. Owner only. @param {string} root @param {string} range */
-  sync(root, range) {
-    const key = storeKey(root, range);
+  /** Loads a folder's threads when the folder changes; a range switch keeps them, and the view shows those of the open file. Owner only. @param {string} root */
+  sync(root) {
+    const key = storeKey(root);
     if (this.mirror || key === this.key) return;
-    this.key = key; this.threads = settleAfterReload(parseThreads(readJson(key))); this.version++;
+    this.key = key; this.threads = settleAfterReload(readThreads(root)); this.version++;
   }
 
   /** In the pane: takes the threads and draft count the panel published, when they differ. @param {{ threads: Thread[], drafts: number } | null} got */
