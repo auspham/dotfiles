@@ -48,11 +48,14 @@ export function parseRecord(v) {
   return ok ? reviewRecord(r) : null;
 }
 
-/** True when the pane must load the diff again; false when only the reviewed marks changed. @param {ReviewRecord | null} prev @param {ReviewRecord} next */
-export function needsReload(prev, next) {
-  if (!prev) return true;
+/** How the pane takes a new record: "open" a file afresh, reload its "content" in place (an edit, so the view keeps its place), redraw only its "marks", or null when nothing changed. @param {ReviewRecord | null} prev @param {ReviewRecord} next @returns {"open" | "content" | "marks" | null} */
+export function reviewChange(prev, next) {
+  if (!prev) return "open";
   const same = ["root", "on", "against", "hasHead"].every((k) => prev[k] === next[k]);
-  return !same || prev.file.path !== next.file.path || prev.file.hash !== next.file.hash;
+  if (!same || prev.file.path !== next.file.path) return "open";
+  // The panel publishes on a click before its load, then again with the hash; the pane's own load already has that text.
+  if (prev.file.hash !== null && prev.file.hash !== next.file.hash) return "content";
+  return JSON.stringify(prev) === JSON.stringify(next) ? null : "marks";
 }
 
 /** What to do with the Mark reviewed request in shared state: the path to toggle (or null) and the request to remember as handled. @param {unknown} req @param {number | null} seen @param {string | null} root @param {number} now @returns {{ path: string | null, seen: number | null }} */

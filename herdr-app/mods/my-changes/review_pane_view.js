@@ -3,17 +3,18 @@
 import { div } from "gpui-kit";
 import { v_flex } from "gpui-base";
 import { theme } from "herdr";
-import { needsReload } from "./review_pane.js";
+import { reviewChange } from "./review_pane.js";
 import { paneRecord } from "./review_link.js";
 
-/** Takes in the panel's newest record: loads the diff when the file or its content changed, else only redraws the marks. @param {any} host the pane's Changes view @param {string} context its location key @param {any} cx */
+/** Takes in the panel's newest record: opens the file afresh, reloads an edited one in place, or only redraws the marks. @param {any} host the pane's Changes view @param {string} context its location key @param {any} cx */
 function sync(host, context, cx) {
-  const record = paneRecord(), prev = host.record ?? null;
-  if (!record || JSON.stringify(record) === JSON.stringify(prev)) return;
+  const record = paneRecord(), change = record ? reviewChange(host.record ?? null, record) : null;
+  if (!change) return;
   host.record = record;
-  if (!needsReload(prev, record)) return;
+  if (change === "marks") return;
   Object.assign(host, { context, root: record.root, on: record.on, against: record.against, hasHead: record.hasHead, files: [{ ...record.file }] });
-  host.pick(record.file.path, cx, true);
+  if (change === "open") { host.pick(record.file.path, cx, true); return; }
+  cx.spawn(async (cx) => { try { await host.load(record.file.path, context); } catch (e) { host.note = `Cannot preview this diff: ${e}`; } cx.notify(); });
 }
 
 /** Draws the review pane for the Changes view `host`. @param {any} host @param {string} context @param {any} cx */

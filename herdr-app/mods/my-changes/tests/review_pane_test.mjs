@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { findReviewPane, splitTarget, followFocus, reviewRecord, parseRecord, needsReload, toggleToApply, reviewKey, TOGGLE_TTL_MS } from "../review_pane.js";
+import { findReviewPane, splitTarget, followFocus, reviewRecord, parseRecord, reviewChange, toggleToApply, reviewKey, TOGGLE_TTL_MS } from "../review_pane.js";
 
 const terminalPane = (pane, tab) => ({ pane, tab, terminal: `t-${pane}` });
 const modPane = (pane, tab, mod = "my-changes") => ({ pane, tab, terminal: null, mod });
@@ -31,11 +31,13 @@ assert.equal(parseRecord({ ...record, file: { ...record.file, add: -1 } }), null
 assert.equal(parseRecord("nope"), null, "a non-object is rejected");
 assert.equal(reviewKey("A"), "review.open.A", "each tab has its own key");
 
-assert.equal(needsReload(null, record), true, "the first record loads the diff");
-assert.equal(needsReload(record, { ...record, reviewed: true }), false, "a reviewed tick only redraws");
-assert.equal(needsReload(record, { ...record, file: { ...record.file, path: "b.js" } }), true, "another file loads its diff");
-assert.equal(needsReload(record, { ...record, file: { ...record.file, hash: "h2" } }), true, "an edited file loads its diff again");
-assert.equal(needsReload(record, { ...record, against: "abc" }), true, "another range loads the diff again");
+assert.equal(reviewChange(null, record), "open", "the first record opens the file");
+assert.equal(reviewChange(record, { ...record, reviewed: true }), "marks", "a reviewed tick only redraws");
+assert.equal(reviewChange(record, { ...record, file: { ...record.file, path: "b.js" } }), "open", "another file opens afresh");
+assert.equal(reviewChange(record, { ...record, against: "abc" }), "open", "another range opens afresh");
+assert.equal(reviewChange(record, { ...record, file: { ...record.file, hash: "h2", add: 4 } }), "content", "an edited file reloads in place, keeping the view");
+const unhashed = { ...record, file: { ...record.file, hash: null } };
+assert.equal(reviewChange(unhashed, record), "marks", "the hash arriving after the panel's first load does not load the diff twice");
 
 const now = 100000, req = { root: "/repo", path: "src/a.js", ts: now - 10 };
 assert.deepEqual(toggleToApply(req, null, "/repo", now), { path: "src/a.js", seen: req.ts }, "applies a fresh Mark reviewed request from the pane and remembers it");
