@@ -1039,7 +1039,7 @@ export default class Changes extends View {
   // The open file's diff, unified or split, with the split's drag handle.
   diffBox(t, splitting) {
     const lay = commentLayout(this, splitting);
-    const draw = (it) => ("block" in it ? blockView(it.block, t, lay.width)
+    const draw = (it) => ("block" in it ? blockView(it.block, t, lay)
       : splitting ? this.splitRow(this.split[it.row], t, this.isSel(it.row), lay.marked.has(it.row)) : this.diffRow(this.rows[it.row], t, this.isSel(it.row), lay.marked.has(it.row)));
     return div().flex_1().min_h(0).relative().font_family(settings().font_family ?? "JetBrains Mono").text_size(11)
       .on_mouse_down("left", (ev) => { this.shift = Boolean(ev.modifiers?.shift); })
