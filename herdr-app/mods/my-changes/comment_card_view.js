@@ -4,6 +4,7 @@ import { div } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
 import { PX, postHeight, ago } from "./comment_card.js";
 import { COMMENT_FONT, BODY_PX } from "./comment_font.js";
+import { rowsView } from "./comment_md_view.js";
 
 /** @typedef {import("./comment_card.js").Card} Card */
 /** @typedef {import("./comment_card.js").Post} Post */
@@ -29,18 +30,13 @@ const metaRow = (t, p, now) => h_flex().h(PX.meta).flex_none().gap(8).items_cent
   .child(div().font_family(COMMENT_FONT).text_size(BODY_PX).font_bold().text_color(t.foreground).child(p.name))
   .when(p.at !== null, (e) => e.child(div().text_size(12).text_color(t.muted).child(ago(p.at ?? 0, now))));
 
-/** One wrapped line; code spans sit on a tint in the same font, so they keep the width the wrap counted. @param {object} t @param {import("./comment_wrap.js").TextLine} line */
-const lineView = (t, line) => h_flex().h(PX.line).flex_none().items_center().whitespace_nowrap().overflow_hidden()
-  .children(line.map((sp) => div().flex_none().when(sp.code, (e) => e.bg(t.foreground + "14").rounded(3)).child(sp.s)))
-  .when(!line.length, (e) => e.child(" "));
-
 /** @param {object} t @param {{ post: Post, first: boolean, now: number }} spec */
 function postView(t, { post, first, now }) {
   const small = (text, color) => div().h(PX.line).pl(PX.indent).flex().items_center().text_size(12).text_color(color).child(text);
   return v_flex().relative().h(postHeight(post)).flex_none().px(PX.padX).py(PX.pad).when(!first, (e) => e.border_t_1().border_color(t.border))
     .when(post.queued, (e) => e.bg(t.ansi3 + "0d").child(div().absolute().left(0).top(0).bottom(0).w(3).bg(t.ansi3)))
     .child(metaRow(t, post, now)).child(div().h(PX.gap).flex_none())
-    .child(v_flex().pl(PX.indent).flex_none().text_color(post.tone === "error" ? t.blocked : t.foreground).font_family(COMMENT_FONT).text_size(BODY_PX).children(post.lines.map((l) => lineView(t, l))))
+    .child(v_flex().pl(PX.indent).flex_none().text_color(post.tone === "error" ? t.blocked : t.foreground).font_family(COMMENT_FONT).text_size(BODY_PX).children(rowsView(t, post.rows)))
     .when(post.more > 0, (e) => e.child(small(`Show more (${post.more} more lines)`, t.accent)))
     .when(post.queued, (e) => e.child(small("Queued, goes out with Send all", t.ansi3).h(PX.note).text_size(11.5)));
 }

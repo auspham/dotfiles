@@ -1,9 +1,11 @@
-// Wraps comment text to a width in px, keeping `code` spans apart so they draw on a tinted background. Pure: no herdr imports, so node can test it.
-
-/** @typedef {{ s: string, code: boolean }} Span */
-/** @typedef {Span[]} TextLine */
+// Wraps styled spans of comment text to a width in px, in the comment font's fixed advance. Pure: no herdr imports, so node can test it.
 
 import { ADVANCE_EM, BODY_PX } from "./comment_font.js";
+
+/** @typedef {import("./markdown_inline.js").Span} Span */
+/** @typedef {Span[]} TextLine */
+
+const STYLES = /** @type {const} */ (["code", "bold", "italic", "link"]);
 
 // Glyphs past Latin-1 (CJK, emoji, symbols) fall back to another font that may draw them twice as wide; counting two cells errs wide, which only costs slack.
 const cells = (ch) => ((ch.codePointAt(0) ?? 0) > 0xff ? 2 : 1);
@@ -11,48 +13,58 @@ const cells = (ch) => ((ch.codePointAt(0) ?? 0) > 0xff ? 2 : 1);
 /** Estimated px width of a run of text in the comment font. @param {string} s @param {number} [size] font px */
 export const textPx = (s, size = BODY_PX) => [...s].reduce((w, ch) => w + cells(ch), 0) * ADVANCE_EM * size;
 
-/** A paragraph's words, each knowing whether it is inside backticks; an unclosed backtick stays literal. @param {string} para @returns {Span[]} */
-function words(para) {
-  const parts = para.split("`"), closed = parts.length % 2 === 1;
-  const runs = parts.map((s, i) => ({ s, code: closed && i % 2 === 1 }));
-  if (!closed) runs.splice(0, runs.length, { s: para, code: false });
-  return runs.flatMap((r) => r.s.split(" ").filter(Boolean).map((s) => ({ s, code: r.code })));
-}
+/** @param {Span} a @param {Span} b */
+const sameStyle = (a, b) => STYLES.every((k) => Boolean(a[k]) === Boolean(b[k]));
 
-/** Cuts a word wider than the line into pieces that fit. @param {Span} w @param {number} width */
-function breakWord(w, width) {
+/** The line with neighbouring spans of one style joined, as the view draws one box per span. @param {TextLine} line @returns {TextLine} */
+function merge(line) {
   const out = [];
-  let piece = "";
-  for (const ch of w.s) {
-    if (piece && textPx(piece + ch) > width) { out.push({ s: piece, code: w.code }); piece = ""; }
-    piece += ch;
+  for (const sp of line) {
+    const last = out[out.length - 1];
+    if (last && sameStyle(last, sp)) last.s += sp.s; else out.push({ ...sp });
   }
-  return [...out, { s: piece, code: w.code }];
+  return out;
 }
 
-/** Adds a word to a line, joining it to the last span when they share a font. @param {TextLine} line @param {Span} w */
-function append(line, w) {
-  const last = line[line.length - 1];
-  if (!last) return [{ ...w }];
-  if (last.code === w.code) return [...line.slice(0, -1), { s: `${last.s} ${w.s}`, code: w.code }];
-  // The space between fonts goes on the prose side, so a code span never draws a trailing blank.
-  if (last.code) return [...line, { s: ` ${w.s}`, code: false }];
-  return [...line.slice(0, -1), { s: `${last.s} `, code: false }, { ...w }];
-}
-
-/** @param {TextLine} line */
-const linePx = (line) => line.reduce((w, sp) => w + textPx(sp.s), 0);
-
-/** Word-wraps one paragraph. @param {string} para @param {number} width */
-function wrapPara(para, width) {
+/** The line's words, each a run of spans with no space, which may change style midway as in `**bold**,`. @param {Span[]} spans @returns {Span[][]} */
+function words(spans) {
   const out = [];
+  let word = [];
+  for (const sp of spans) {
+    for (const part of sp.s.split(/( +)/)) {
+      if (part.startsWith(" ")) { if (word.length) out.push(word); word = []; } else if (part) word.push({ ...sp, s: part });
+    }
+  }
+  return word.length ? [...out, word] : out;
+}
+
+/** Cuts a word wider than the line into pieces that fit. @param {Span[]} word @param {number} width @param {number} size */
+function breakWord(word, width, size) {
+  const out = [];
+  let piece = [], used = 0;
+  for (const ch of word.flatMap((sp) => [...sp.s].map((c) => ({ ...sp, s: c })))) {
+    if (piece.length && used + textPx(ch.s, size) > width) { out.push(merge(piece)); piece = []; used = 0; }
+    piece.push(ch); used += textPx(ch.s, size);
+  }
+  return [...out, merge(piece)];
+}
+
+/** The space between two words: styled like them when they share a style, so `a b` in code stays one tinted box. @param {Span} left @param {Span} right */
+const space = (left, right) => (sameStyle(left, right) ? { ...left, s: " " } : { s: " " });
+
+/** @param {TextLine} line @param {number} size */
+const linePx = (line, size) => line.reduce((w, sp) => w + textPx(sp.s, size), 0);
+
+/** Word-wraps one line of spans to `width` px at font `size`; an empty line stays one empty line. @param {Span[]} spans @param {number} width @param {number} [size] @returns {TextLine[]} */
+export function wrapSpans(spans, width, size = BODY_PX) {
+  const w = Math.max(60, width), out = [];
   let line = [];
-  for (const w of words(para).flatMap((w) => (textPx(w.s) > width ? breakWord(w, width) : [w]))) {
-    const next = append(line, w);
-    if (line.length && linePx(next) > width) { out.push(line); line = [{ ...w }]; } else line = next;
+  for (const word of words(spans).flatMap((wd) => (linePx(wd, size) > w ? breakWord(wd, w, size) : [wd]))) {
+    const next = line.length ? [...line, space(line[line.length - 1], word[0]), ...word] : word;
+    if (line.length && linePx(next, size) > w) { out.push(merge(line)); line = word; } else line = next;
   }
-  return [...out, line];
+  return [...out, merge(line)];
 }
 
-/** Word-wraps text to `width` px; a blank line stays as an empty line. @param {string} text @param {number} width @returns {TextLine[]} */
-export const wrapPx = (text, width) => text.replace(/\t/g, "    ").split("\n").flatMap((p) => wrapPara(p, Math.max(60, width)));
+/** Word-wraps plain text, one line per newline. @param {string} text @param {number} width @returns {TextLine[]} */
+export const wrapPx = (text, width) => text.split("\n").flatMap((l) => wrapSpans([{ s: l }], width));

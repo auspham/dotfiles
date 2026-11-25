@@ -7,12 +7,11 @@ import { threadChip, taskNames } from "../comment_status.js";
 import { writeMode, queueLabel, barTitle, queuedText, barShows } from "../comment_bar.js";
 import { splitSources } from "../comment_anchor.js";
 
+const text = (rows) => prose(rows.filter((r) => r.kind === "text").map((r) => r.spans));
 const prose = (lines) => lines.map((l) => l.map((sp) => sp.s).join(""));
 assert.deepEqual(prose(wrapPx("one two three four", 90)), ["one two", "three four"], "wraps at word breaks by estimated width");
 assert.ok(wrapPx("x".repeat(200), 100).length > 1, "breaks a word wider than the line");
 assert.deepEqual(prose(wrapPx("a\n\nb", 200)), ["a", "", "b"], "keeps the answer's blank lines");
-assert.deepEqual(wrapPx("use `greet()` here", 400)[0], [{ s: "use ", code: false }, { s: "greet()", code: true }, { s: " here", code: false }], "keeps backtick spans apart so they draw in the code font");
-assert.deepEqual(wrapPx("a ` b", 400)[0], [{ s: "a ` b", code: false }], "an unclosed backtick stays literal text");
 assert.equal(textPx("WWWW"), textPx("iiii"), "every character takes one advance in the monospace comment font");
 assert.equal(textPx("界"), 2 * textPx("a"), "a glyph past Latin-1 counts two cells, since its fallback font may draw it wide");
 // Fira Code at 13px in a screenshot of a farewell answer: this 74-character line's ink spans 589px over 73 advances, so one advance is at most 589 / 73 px.
@@ -29,7 +28,7 @@ assert.deepEqual(card(t).chip, { label: "Queued", tone: "queued" }, "a new comme
 assert.deepEqual([who(t), card(t).posts[0].queued], [["You"], true], "a queued comment is the user's post, marked pending");
 assert.equal(card(t).foot, "Edit or delete the queued comment…", "a queued thread's footer says a click edits it");
 const retry = card(patchLast([t], t.id, { a: "Could not send to fixer: exit 1" })[0]).posts[0];
-assert.deepEqual([prose(retry.lines).join(" "), retry.tone], ["Why is this two? Not sent: Could not send to fixer: exit 1 Send all tries again.", "error"], "a queued comment whose send failed says why and that Send all retries it");
+assert.deepEqual([text(retry.rows).join(" "), retry.tone], ["Why is this two? Not sent: Could not send to fixer: exit 1 Send all tries again.", "error"], "a queued comment whose send failed says why and that Send all retries it");
 const sent = patchLast([t], t.id, { status: "sent", to: { address: "t7", name: "Farewell function in greet.js" } })[0];
 assert.equal(card(sent).chip.label, "Waiting for Farewell function in greet.js", "a comment sent to an agent names it while waiting");
 assert.equal(card(sent, { ...open, names: { t7: "farewell" } }).chip.label, "Waiting for farewell", "the agent goes by its task label, not its tab title");
@@ -45,17 +44,17 @@ assert.match(card(t, { ...open, outdated: true }).head, /^Line 3, no longer in t
 assert.equal(headLabel({ ...anchor, lines: [6, 7, 8, 9].map((n) => ({ side: "new", n, text: "x" })) }), "Lines 6-9", "a thread on several lines names the range");
 assert.equal(headLabel({ ...anchor, lines: [{ side: "old", n: 2, text: "x" }] }), "Line 2 (removed)", "a thread on a removed line says so after the number");
 const long = patchLast([sent], t.id, { status: "done", a: Array.from({ length: 40 }, (_, i) => `line ${i}`).join("\n") })[0];
-assert.deepEqual([card(long).posts[1].lines.length, card(long).posts[1].more], [FOLD_LINES, 40 - FOLD_LINES], "a long answer folds after a few lines and counts the rest");
-assert.equal(card(long, { ...open, expanded: true }).posts[1].lines.length, 40, "the open thread shows the whole answer");
+assert.deepEqual([card(long).posts[1].rows.length, card(long).posts[1].more], [FOLD_LINES, 40 - FOLD_LINES], "a long answer folds after a few lines and counts the rest");
+assert.equal(card(long, { ...open, expanded: true }).posts[1].rows.length, 40, "the open thread shows the whole answer");
 
-const p1 = { who: "you", name: "You", at: 1, lines: [[], []], tone: "body", queued: false, more: 0 };
-assert.equal(postHeight(p1), 2 * PX.pad + PX.meta + PX.gap + 2 * PX.line, "a post is its name row and lines plus padding");
+const p1 = { who: "you", name: "You", at: 1, rows: [{ kind: "text", h: 20 }, { kind: "gap", h: 8 }, { kind: "code", h: 30 }], tone: "body", queued: false, more: 0 };
+assert.equal(postHeight(p1), 2 * PX.pad + PX.meta + PX.gap + 58, "a post is its name row and the height of its rows plus padding");
 assert.equal(postHeight({ ...p1, queued: true, more: 3 }), postHeight(p1) + PX.note + PX.line, "a queued note and Show more each add a row");
 assert.equal(cardHeight({ head: "h", chip: { label: "", tone: "queued" }, posts: [p1, p1], foot: "" }), 2 * PX.margin + PX.border + PX.head + 2 * postHeight(p1) + PX.foot, "a card is its header, posts and footer plus margins");
 assert.equal(cardHeight({ marker: "m" }), 2 * PX.margin + PX.border + PX.marker, "a marker card is one row");
 assert.deepEqual([cardWidth(2000, 40), cardWidth(500, 40)], [PX.maxW, 460], "a card stays narrow on a wide pane and fits a narrow one");
 const wordy = { ...t, exchanges: [{ ...t.exchanges[0], q: "word ".repeat(80) }] }, all = { ...open, expanded: true };
-assert.ok(threadCard(wordy, 600, all).posts[0].lines.length < threadCard(wordy, 300, all).posts[0].lines.length, "a narrow card wraps onto more lines");
+assert.ok(threadCard(wordy, 600, all).posts[0].rows.length < threadCard(wordy, 300, all).posts[0].rows.length, "a narrow card wraps onto more lines");
 assert.deepEqual([ago(0, 30e3), ago(0, 5 * 60e3), ago(0, 3 * 3600e3), ago(0, 2 * 86400e3)], ["just now", "5m ago", "3h ago", "2d ago"], "times read as how long ago");
 assert.deepEqual(taskNames([{ address: "t3m", labels: { task: "farewell" } }, { address: "t1" }]), { t3m: "farewell" }, "names only terminals that carry a task label");
 

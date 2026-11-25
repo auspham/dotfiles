@@ -2,18 +2,18 @@
 
 import { waiting, isDraft } from "./comment_threads.js";
 import { threadChip, agentName } from "./comment_status.js";
-import { wrapPx } from "./comment_wrap.js";
+import { markdownRows, contentRows, firstRows, rowsHeight, MD } from "./comment_rows.js";
 
 /** @typedef {import("./comment_threads.js").Thread} Thread */
-/** @typedef {import("./comment_wrap.js").TextLine} TextLine */
-/** queued: waits for Send all; more: lines hidden behind Show more. */
-/** @typedef {{ who: "you" | "agent", name: string, at: number | null, lines: TextLine[], tone: "body" | "error", queued: boolean, more: number }} Post */
+/** @typedef {import("./comment_rows.js").Row} Row */
+/** rows: the markdown laid out; queued: waits for Send all; more: rows of text hidden behind Show more. */
+/** @typedef {{ who: "you" | "agent", name: string, at: number | null, rows: Row[], tone: "body" | "error", queued: boolean, more: number }} Post */
 /** @typedef {{ head: string, chip: import("./comment_status.js").Chip, posts: Post[], foot: string }} Card */
 /** @typedef {{ collapsed: boolean, outdated: boolean, expanded: boolean, names: Record<string, string> }} CardState */
 
 // Px of each part; the view draws these. MARGIN is above and below the card, BORDER its top plus bottom edge.
 export const PX = { margin: 6, border: 2, head: 34, pad: 10, meta: 22, gap: 4, line: 20, note: 18, foot: 50, marker: 34, padX: 14, indent: 26, maxW: 680 };
-// Text past this many lines folds behind Show more until the thread is opened.
+// Text past this many rows folds behind Show more until the thread is opened.
 export const FOLD_LINES = 6;
 
 /** "Line 2", "Lines 4-6" or "Line 2 (removed)". @param {import("./comment_anchor.js").Anchor} anchor */
@@ -29,10 +29,10 @@ export const cardWidth = (width, left) => Math.max(200, Math.min(PX.maxW, width 
 /** @param {number} cardW */
 const textWidth = (cardW) => cardW - PX.border - 2 * PX.padX - PX.indent - 4;
 
-/** @param {Omit<Post, "lines" | "more"> & { text: string }} spec @param {number} width @param {boolean} expanded */
+/** @param {Omit<Post, "rows" | "more"> & { text: string }} spec @param {number} width @param {boolean} expanded */
 function post({ text, ...rest }, width, expanded) {
-  const all = wrapPx(text, width), fold = !expanded && all.length > FOLD_LINES + 1;
-  return { ...rest, lines: fold ? all.slice(0, FOLD_LINES) : all, more: fold ? all.length - FOLD_LINES : 0 };
+  const all = markdownRows(text, width), n = contentRows(all), fold = !expanded && n > FOLD_LINES + 1;
+  return { ...rest, rows: fold ? firstRows(all, FOLD_LINES) : all, more: fold ? n - FOLD_LINES : 0 };
 }
 
 /** The posts one exchange draws: the user's comment and, once there is one, the agent's answer or the failure. @param {import("./comment_threads.js").Exchange} e @param {number} width @param {CardState} s @returns {Post[]} */
@@ -40,7 +40,7 @@ function exchangePosts(e, width, s) {
   const queued = e.status === "draft", you = post({ who: "you", name: "You", at: e.at, text: e.q, tone: "body", queued }, width, s.expanded);
   if (e.status === "done") return [you, post({ who: "agent", name: agentName(e.to, s.names), at: null, text: e.a, tone: "body", queued: false }, width, s.expanded)];
   if (e.status === "error") return [you, post({ who: "agent", name: agentName(e.to, s.names), at: null, text: e.a, tone: "error", queued: false }, width, true)];
-  if (queued && e.a) return [{ ...you, lines: [...you.lines, ...wrapPx(`Not sent: ${e.a} Send all tries again.`, width)], tone: "error" }];
+  if (queued && e.a) return [{ ...you, rows: [...you.rows, { kind: "gap", h: MD.blockGap }, ...markdownRows(`Not sent: ${e.a} Send all tries again.`, width)], tone: "error" }];
   return [you];
 }
 
@@ -63,7 +63,7 @@ function markerText(t) {
 }
 
 /** @param {Post} p */
-export const postHeight = (p) => 2 * PX.pad + PX.meta + PX.gap + p.lines.length * PX.line + (p.queued ? PX.note : 0) + (p.more ? PX.line : 0);
+export const postHeight = (p) => 2 * PX.pad + PX.meta + PX.gap + rowsHeight(p.rows) + (p.queued ? PX.note : 0) + (p.more ? PX.line : 0);
 
 /** A card's full height in the list, margins included. @param {Card | { marker: string }} c */
 export function cardHeight(c) {
