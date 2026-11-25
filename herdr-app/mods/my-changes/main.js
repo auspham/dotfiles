@@ -5,12 +5,18 @@ import { langFor, highlightRows, hashLines, wrapTokens } from "./highlight.js";
 import { coordinatorNote } from "./coordinator.js";
 import { GuideSource } from "./guide_view.js";
 import { LEVELS, LEVEL_LABEL, VERDICT_SCHEMA, pathFlags, diffFlags, isTest, isCode, testsChangedCode, levelOf, splitDiff, triagePrompt } from "./triage.js";
+import { followedLocation } from "./review_pane.js";
+import { isReviewPane, paneLocation, paneShown, openReviewPane, publishReview, requestToggle, takeToggle } from "./review_link.js";
+import { paneView } from "./review_pane_view.js";
 
+let lastLocation = null;
 function location() {
+  if (isReviewPane()) return paneLocation();
   const space = spaces().find((s) => s.active), f = focused();
   const pane = f?.pane ? panes().find(p => p.pane === f.pane) : null;
   const on = f?.pane === null ? (f.terminal?.includes("/") ? f.terminal.split("/")[0] : null) : space?.machine ?? null;
-  return { cwd: pane?.cwd || f?.cwd || space?.folder, on };
+  lastLocation = followedLocation(pane, { cwd: pane?.cwd || f?.cwd || space?.folder, on }, lastLocation);
+  return lastLocation;
 }
 const key = () => JSON.stringify(location());
 // Reads write nothing under .git (no index refresh or lock, no fsmonitor cookie):
@@ -151,9 +157,11 @@ export default class Changes extends View {
     this.flags = new Map(); this.verdicts = {}; this.triaging = false; this.guide = new GuideSource();
     this.sel = null; this.chat = { session: null, messages: [] }; this.hasQuestion = false; this.threadScroll = ScrollHandle.new(); this.scrollThreads = false; this.threadH = clamp(Number(this.read("threadH")) || 240, 90, 900); this.areaH = 700; this.vdrag = null;
     this.listH = Number(this.read("listH")) || 0; this.listSeen = 200; this.panelH = 800; this.ldrag = null; // listH 0: as tall as its rows
+    // The review pane copy draws what the side panel publishes; it reads no git state of its own.
+    if (isReviewPane()) return;
     this.refresh(cx);
     cx.timer.every(10000, (cx) => this.refresh(cx));
-    cx.timer.every(400, (cx) => this.applyFocus(cx));
+    cx.timer.every(400, (cx) => { this.applyFocus(cx); const path = takeToggle(this); if (path) this.toggleReviewed(path, cx, true); });
     cx.spawn(async (cx) => { for (;;) { this.command(await nextCommand(), cx); cx.notify(); } });
     // The chat runs tests too; watch for its runs while it answers.
     cx.timer.every(3000, (cx) => { if (this.root && (this.testsRunning() || this.chat.messages.some((m) => m.status === "pending"))) this.loadTests(cx); });
@@ -225,10 +233,12 @@ export default class Changes extends View {
   loadMarks() { try { this.marks = JSON.parse(this.read(this.marksKey()) ?? "{}") || {}; } catch { this.marks = {}; } }
   saveMarks() { this.write(this.marksKey(), JSON.stringify(this.marks)); }
   sig(f) { return `${f.status}:${f.add}:${f.del}`; }
-  reviewed(f) { return this.marks[f.path]?.sig === this.sig(f) && !f.changedSince; }
-  stale(f) { return Boolean(this.marks[f.path]) && !this.reviewed(f); }
+  // The review pane shows the side panel's marks, which it reads from the panel's record.
+  reviewed(f) { return this.record ? this.record.reviewed : this.marks[f.path]?.sig === this.sig(f) && !f.changedSince; }
+  stale(f) { return this.record ? this.record.stale : Boolean(this.marks[f.path]) && !this.reviewed(f); }
 
   toggleReviewed(path, cx, advance = false) {
+    if (this.record) { requestToggle(this.root, path); return; }
     const file = this.files.find((f) => f.path === path);
     if (!file) return;
     if (this.reviewed(file)) delete this.marks[path];
@@ -240,7 +250,7 @@ export default class Changes extends View {
         if (next) this.pick(next.path, cx, true);
       }
     }
-    this.saveMarks(); cx.notify();
+    this.saveMarks(); publishReview(this); cx.notify();
   }
 
   lastKey() { return `last:${this.root}`; }
@@ -715,7 +725,7 @@ export default class Changes extends View {
       .when(this.stale(f), (e) => e.child(div().text_size(10).text_color(t.blocked).child("changed")))
       .when(f.add > 0, (e) => e.child(div().text_size(11).text_color(t.ansi2).child(`+${f.add}`))).when(f.del > 0, (e) => e.child(div().text_size(11).text_color(t.ansi1).child(`\u2212${f.del}`)));
     return v_flex().id(`change-${f.path}`).h(risk ? ROW_H.risk : ROW_H.file).flex_none().pl(8 + depth * 16).pr(8).rounded(7).cursor_pointer()
-      .when(this.open === f.path, (e) => e.bg(t.selected)).hover((s) => s.bg(t.hover)).on_click((_e, cx) => this.pick(f.path, cx))
+      .when(this.open === f.path, (e) => e.bg(t.selected)).hover((s) => s.bg(t.hover)).on_click((_e, cx) => this.pick(f.path, cx, openReviewPane()))
       .child(line).when(risk, (e) => e.child(this.whyLine(f, t)));
   }
 
@@ -866,6 +876,7 @@ export default class Changes extends View {
       file.hash = hashLines(lines);
       const mark = this.marks[path];
       if (mark?.sig === this.sig(file) && mark.hash && mark.hash !== file.hash) file.changedSince = true;
+      publishReview(this);
     }
   }
 
@@ -885,6 +896,7 @@ export default class Changes extends View {
     if (this.open) for (const dir of [...this.foldedDirs]) if (this.open.startsWith(`${dir.slice(dir.indexOf("|") + 1)}/`)) this.foldedDirs.delete(dir);
     if (this.open) { this.scrollThreads = true; this.lastPath = this.open; this.write(this.lastKey(), JSON.stringify({ path: this.open, range: this.range })); } this.setLines([]); this.note = null;
     this.closed = !this.open;
+    publishReview(this);
     const context = this.context;
     if (this.open) cx.spawn(async (cx) => {
       try { await this.load(path, context); }
@@ -982,7 +994,7 @@ export default class Changes extends View {
         .child(h_flex().gap(2).flex_none()
           .child(this.seg(t, "mode-unified", "Unified", this.mode === "unified", true, (_e, cx) => this.setMode("unified", cx)))
           .child(this.seg(t, "mode-split", "Split", this.mode === "split", true, (_e, cx) => this.setMode("split", cx)))
-          .child(this.seg(t, "expand", "⤢", false, true, (_e, cx) => { this.toggleExpand(); cx.notify(); })))
+          .when(!this.record, (e) => e.child(this.seg(t, "expand", "⤢", false, true, (_e, cx) => { this.toggleExpand(); cx.notify(); }))))
         .child(div().flex_1())
         .child(div().id("open-zed").h(26).px(10).flex().flex_none().items_center().rounded(6).cursor_pointer().text_size(12).bg(t.raised).text_color(t.muted)
           .hover((h) => h.bg(t.hover).text_color(t.foreground)).tooltip("Open in Zed at the selected line, or the first change (key: o)")
@@ -1020,6 +1032,7 @@ export default class Changes extends View {
 
   render(cx) {
     if (props()?.menu) return this.menuView(theme());
+    if (isReviewPane()) return paneView(this, key(), cx);
     if (key() !== this.context) this.refresh(cx);
     const t = theme(), add = this.files.reduce((n, f) => n + f.add, 0), del = this.files.reduce((n, f) => n + f.del, 0);
     const openFile = this.files.find((f) => f.path === this.open), banner = openFile ? this.whyBanner(openFile, t) : null;
@@ -1027,7 +1040,7 @@ export default class Changes extends View {
     const listFit = listRows.reduce((n, row) => n + this.rowHeight(row), 12);
     const untriaged = this.untriaged().length, judged = Object.keys(this.verdicts).length > 0;
     const showTriage = this.files.length > 0 && (this.triaging || untriaged > 0 || this.view !== "risk");
-    const splitting = this.mode === "split";
+    const splitting = this.mode === "split", paned = paneShown();
     if (splitting) this.layoutSplit();
     const reviewedCount = this.files.filter((f) => this.reviewed(f)).length;
     return v_flex().id("changes").relative().size_full().min_h(0).rounded(10).overflow_hidden().bg(t.background).border_1().border_color(this.holds() ? t.accent : t.border).text_color(t.foreground).text_size(13).track_focus(this.handle)
@@ -1080,12 +1093,12 @@ export default class Changes extends View {
         })
         .child(div().w_full().h(1).bg(t.border)))
       .when(this.limited, el => el.child(div().px(12).py(4).text_size(11).text_color(t.dim).child("Showing the first 1,000 changed files")))
-      .when(Boolean(openFile), (el) => el.child(this.fileBar(openFile, t)))
+      .when(Boolean(openFile) && !paned, (el) => el.child(this.fileBar(openFile, t)))
       .when(Boolean(banner), (el) => el.child(banner))
       .child(v_flex().id("review-area").flex_1().min_h(0).relative()
         .on_size_change((size, cx) => { if (Math.abs(size.height - this.areaH) > 1) { this.areaH = size.height; cx.notify(); } })
         .on_mouse_down_out((_e, cx) => { if (this.sel) { this.sel = null; cx.notify(); } })
-        .child(this.diffBox(t, splitting))
+        .when(!paned, (e) => e.child(this.diffBox(t, splitting)))
         .when(Boolean(this.open) && Boolean(this.root), (e) => e.child(this.askPanel(t)))
         .when(Boolean(this.vdrag), (e) => e.child(div().id("threads-drag").absolute().inset_0().cursor_row_resize()
           .on_mouse_move((ev, cx) => { this.threadH = clamp(this.vdrag.h + (this.vdrag.y - ev.position.y), 90, Math.max(90, this.areaH - 140)); cx.notify(); })
