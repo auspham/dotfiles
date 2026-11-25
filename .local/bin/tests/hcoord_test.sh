@@ -270,6 +270,7 @@ rm "$fx/c2.json"
 taken=$(TEST_ME=c5 run adopt)
 grep -q '^adopted theirs ' <<<"$taken" || { echo "$taken" >&2; fail "adopt takes a child whose coordinator is gone"; }
 grep -q '^adopted mine ' <<<"$taken" || fail "adopt takes a lent child whose borrower is gone"
+[ "$(jq -r '.labels.coord + "|" + (.labels.owner // "")' "$fx/$mine_t.json")" = "c5|" ] || fail "adopting a lent child ends the loan"
 [ "$(event adopt mine "$spm" | jq -r .from_coord)" = c2 ] || fail "adopt records the child's controller, not the last actor"
 grep -qxF 'skipped kept (controlled by c1)' <<<"$taken" || fail "adopt skips a child a live coordinator still controls"
 [ "$(jq -r .labels.coord "$fx/$(event spawn kept "$spm" | jq -r .terminal).json")" = c1 ] || fail "a skipped child keeps its coordinator"

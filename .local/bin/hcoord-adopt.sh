@@ -23,7 +23,7 @@ cmd_adopt() {
       continue
     fi
     if [ "$(label_of "$t" coord)" != "$me" ]; then
-      hc label "$t" "coord=$me" >/dev/null
+      hc label "$t" "coord=$me" "owner=" >/dev/null
       ledger_add adopt "$name" "$(jq -cn --arg terminal "$t" --arg from_coord "$coord" --arg from_space "$space" '{terminal: $terminal, from_coord: $from_coord, from_space: $from_space}')"
     fi
     echo "adopted $name $t"
