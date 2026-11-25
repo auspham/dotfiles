@@ -14,6 +14,7 @@ import { CommentStore } from "./comment_store.js";
 import { sender, pollReplies } from "./comment_send.js";
 import { listening } from "./comment_replies.js";
 import { commentLayout, blockView } from "./comment_view.js";
+import { drawnPx } from "./comment_layout.js";
 import { openComposer, closeComposer, clickBlock, submitComposer } from "./comment_actions.js";
 import { composerBar } from "./comment_bar_view.js";
 
@@ -217,6 +218,7 @@ export default class Changes extends View {
 
   read(name) { try { return localStorage.getItem(name); } catch { return null; } }
   write(name, value) { try { localStorage.setItem(name, value); } catch { /* storage can be unavailable */ } }
+  drawn(px) { return drawnPx(px, settings().zoom); }
 
   // The branch this one forked from: the coordinator guide's fork point when it is an ancestor of HEAD, else a child's own fork point from its base label, else the first of the usual names that exists and is not HEAD itself.
   async findBase(git, child) {
@@ -504,7 +506,7 @@ export default class Changes extends View {
           cx.notify();
         })
         .child(div().w_full().h(1).bg(t.border))))
-      .when(messages.length > 0, (e) => e.child(v_flex().id("threads").h(Math.min(this.threadH, Math.max(90, this.areaH - 140))).overflow_y_scroll().track_scroll(this.threadScroll).p(12).gap(12).border_b(1).border_color(t.border).children(messages.map((m, i) => this.threadCard(m, t, i === messages.length - 1)))))
+      .when(messages.length > 0, (e) => e.child(v_flex().id("threads").h(Math.min(this.threadH, Math.max(90, this.drawn(this.areaH) - 140))).overflow_y_scroll().track_scroll(this.threadScroll).p(12).gap(12).border_b(1).border_color(t.border).children(messages.map((m, i) => this.threadCard(m, t, i === messages.length - 1)))))
       .child(v_flex().p(10).gap(7)
         .child(h_flex().gap(6).items_center().flex_wrap().text_size(11).text_color(t.muted)
           .child(div().flex_1().min_w(120).truncate().child(this.sel ? `Asking about ${snippet.label} · Shift-click extends, Esc clears` : this.open ? "Asking about this file. Click a line to ask about it, Shift-click to extend." : "Ask anything about this space."))
@@ -954,10 +956,11 @@ export default class Changes extends View {
 
   // Wraps every split row to the width of its side; the rows' heights follow from how many lines each needs.
   layoutSplit() {
-    const key = `${Math.round(this.diffW)}|${this.ratio.toFixed(3)}|${this.splitVersion}`;
+    const drawnW = this.drawn(this.diffW);
+    const key = `${Math.round(drawnW)}|${this.ratio.toFixed(3)}|${this.splitVersion}`;
     if (key === this.layoutKey) return;
     this.layoutKey = key;
-    const width = Math.max(200, this.diffW);
+    const width = Math.max(200, drawnW);
     this.leftW = Math.floor(width * this.ratio);
     this.rightW = Math.floor(width - this.leftW - 1);
     const cols = (w) => Math.max(12, Math.floor((w - NUMBER_W - GAP - EDGE) / CHAR));
@@ -1044,7 +1047,7 @@ export default class Changes extends View {
         .child(div().flex_1())
         .child(div().id("open-zed").h(26).px(10).flex().flex_none().items_center().rounded(6).cursor_pointer().text_size(12).bg(t.raised).text_color(t.muted)
           .hover((h) => h.bg(t.hover).text_color(t.foreground)).tooltip("Open in Zed at the selected line, or the first change (key: o)")
-          .on_click((_e, cx) => this.openInEditor(cx)).child(this.barW < COMPACT_BAR ? "Zed" : "Open in Zed"))
+          .on_click((_e, cx) => this.openInEditor(cx)).child(this.drawn(this.barW) < COMPACT_BAR ? "Zed" : "Open in Zed"))
         .child(div().id("mark-reviewed").h(26).px(10).flex().flex_none().items_center().rounded(6).cursor_pointer().text_size(12)
           .bg(openFile && this.reviewed(openFile) ? t.raised : t.solid).text_color(openFile && this.reviewed(openFile) ? t.muted : t.solid_foreground)
           .on_click((_e, cx) => this.toggleReviewed(this.open, cx, true))
@@ -1129,7 +1132,7 @@ export default class Changes extends View {
       .children([this.guide.bar(t, this)].filter(Boolean))
       // overflow_y_scrollbar() wraps the list, so its flex sizing never reached the panel's layout.
       .child(div().id("changes-list-box").min_h(44).relative()
-        .when(this.listH > 0, (e) => e.flex_none().h(clamp(this.listH, 44, Math.max(44, this.panelH - 200))))
+        .when(this.listH > 0, (e) => e.flex_none().h(clamp(this.listH, 44, Math.max(44, this.drawn(this.panelH) - 200))))
         .when(!this.listH, (e) => e.flex_1().max_h(listFit))
         .on_size_change((size, cx) => { if (Math.abs(size.height - this.listSeen) > 1) { this.listSeen = size.height; cx.notify(); } })
         .child(v_flex().id("changes-list").absolute().inset_0().overflow_y_scroll().p(6).children(listRows.map((row) => this.listRow(row, t))).when(!this.files.length, (e) => e.child(coordinatorNote(t, terminals(), followedTerminal()) ?? div().p(8).text_color(t.dim).child(this.error || (this.loading ? "Loading changes…" : this.root ? (this.range === "work" ? "No uncommitted changes" : "No changes") : "No folder")))))
@@ -1139,7 +1142,7 @@ export default class Changes extends View {
         .on_mouse_down("left", (ev, cx) => {
           cx.stop_propagation();
           if (ev.click_count === 2) { this.listH = 0; this.write("listH", "0"); }
-          else this.ldrag = { y: ev.position.y, h: this.listSeen };
+          else this.ldrag = { y: ev.position.y, h: this.drawn(this.listSeen) };
           cx.notify();
         })
         .child(div().w_full().h(1).bg(t.border)))
@@ -1152,12 +1155,12 @@ export default class Changes extends View {
         .when(!paned, (e) => e.child(this.diffBox(t, splitting)))
         .when(Boolean(this.open) && Boolean(this.root), (e) => e.child(this.askPanel(t)))
         .when(Boolean(this.vdrag), (e) => e.child(div().id("threads-drag").absolute().inset_0().cursor_row_resize()
-          .on_mouse_move((ev, cx) => { this.threadH = clamp(this.vdrag.h + (this.vdrag.y - ev.position.y), 90, Math.max(90, this.areaH - 140)); cx.notify(); })
+          .on_mouse_move((ev, cx) => { this.threadH = clamp(this.vdrag.h + this.drawn(this.vdrag.y - ev.position.y), 90, Math.max(90, this.drawn(this.areaH) - 140)); cx.notify(); })
           .on_mouse_up("left", (_ev, cx) => { this.vdrag = null; this.write("threadH", String(Math.round(this.threadH))); cx.notify(); }))))
       .when(Boolean(this.note), (e) => e.child(div().px(10).pb(8).text_size(11).text_color(t.ansi1).child(this.note)))
       .on_size_change((size, cx) => { if (Math.abs(size.height - this.panelH) > 1) { this.panelH = size.height; cx.notify(); } })
       .when(Boolean(this.ldrag), (e) => e.child(div().id("list-drag").absolute().inset_0().cursor_row_resize()
-        .on_mouse_move((ev, cx) => { this.listH = clamp(this.ldrag.h + (ev.position.y - this.ldrag.y), 44, Math.max(44, this.panelH - 200)); cx.notify(); })
+        .on_mouse_move((ev, cx) => { this.listH = clamp(this.ldrag.h + this.drawn(ev.position.y - this.ldrag.y), 44, Math.max(44, this.drawn(this.panelH) - 200)); cx.notify(); })
         .on_mouse_up("left", (_ev, cx) => { this.ldrag = null; this.write("listH", String(Math.round(this.listH))); cx.notify(); })));
   }
 }

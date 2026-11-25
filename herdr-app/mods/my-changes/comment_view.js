@@ -1,8 +1,8 @@
 // Lays out comment threads among the diff's rows with their heights, and draws each one's slot in the list.
 
 import { div } from "gpui-kit";
-import { terminals } from "herdr";
-import { layoutItems, placeThreads } from "./comment_layout.js";
+import { terminals, settings } from "herdr";
+import { layoutItems, placeThreads, drawnPx } from "./comment_layout.js";
 import { threadCard, cardHeight, cardWidth, PX } from "./comment_card.js";
 import { cardView, addView } from "./comment_card_view.js";
 import { taskNames } from "./comment_status.js";
@@ -49,7 +49,7 @@ function blocks(host, splitting, { cardW, names }) {
 
 /** The diff's list items, their heights and the rows to mark in the gutter, kept until something they depend on changes. @param {any} host the Changes view @param {boolean} splitting */
 export function commentLayout(host, splitting) {
-  const width = Math.max(240, host.diffW - 12), cardW = cardWidth(width - RIGHT, LEFT), names = taskNames(terminals());
+  const width = Math.max(240, drawnPx(host.diffW, settings().zoom) - 12), cardW = cardWidth(width - RIGHT, LEFT), names = taskNames(terminals());
   const key = [host.mode, host.open, host.splitVersion, host.layoutKey, Math.round(width), host.comments.version, JSON.stringify(host.sel), Boolean(host.composer), openId(host), JSON.stringify(names)].join("|");
   if (host.commentKey === key) return host.commentCache;
   const { out, marked } = blocks(host, splitting, { cardW, names });

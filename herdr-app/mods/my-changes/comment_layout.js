@@ -34,3 +34,8 @@ export function placeThreads(threads, rows, splitSrc) {
   }
   return { placed, outdated, marked };
 }
+
+/** A size on_size_change measured, in logical px, as the units the view draws with at the app's zoom. @param {number} px @param {unknown} zoom settings().zoom @returns {number} */
+export function drawnPx(px, zoom) {
+  return typeof zoom === "number" && zoom > 0 ? px / zoom : px;
+}

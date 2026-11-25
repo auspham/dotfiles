@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { layoutItems, placeThreads } from "../comment_layout.js";
+import { layoutItems, placeThreads, drawnPx } from "../comment_layout.js";
 import { wrapSpans, textPx } from "../comment_wrap.js";
 import { threadCard, cardHeight, cardWidth, postHeight, headLabel, ago, PX, FOLD_LINES } from "../comment_card.js";
 import { newThread, patchLast, addReply, setResolved } from "../comment_threads.js";
@@ -96,3 +96,6 @@ assert.deepEqual(barShows(null, null, 0), { editor: false, queue: false }, "noth
 assert.deepEqual(["new", "reply", "edit", null].map(queueLabel), ["Queue comment", "Queue reply", "Save changes", null], "the editor's button says what it queues, and is absent with no input");
 assert.deepEqual([barTitle("new", "Lines 6-9"), barTitle("reply", "Line 3"), barTitle(null, "Line 3")], ["New comment on Lines 6-9", "Reply on Line 3", "Thread on Line 3"], "the editor's title names the lines and what is being written");
 assert.deepEqual([queuedText(1), queuedText(2)], ["1 comment queued", "2 comments queued"], "the Send all strip counts the queue");
+assert.equal(drawnPx(828, 0.8), 1035, "a pane measured at zoom 0.8 splits its full drawn width");
+assert.equal(drawnPx(700, 1), 700, "at zoom 1 a measured size is already in drawn units");
+assert.deepEqual([undefined, 0, -1, NaN, "0.8", null].map((z) => drawnPx(640, z)), [640, 640, 640, 640, 640, 640], "a missing or unusable zoom leaves the measured size as it is");
