@@ -579,6 +579,7 @@ export default class Spaces extends View {
         else if (e.key === "n") run("space.new");
         else if (e.key === "r" && this.cur) run("space.rename", { id: this.cur });
         else if (e.key === "x" && this.cur) run("space.close", { id: this.cur });
+        else if (e.key === "a" && this.cur && !this.archived.includes(this.cur)) { const id = this.cur; cx.spawn((cx) => applyCommand(this, `archive:${id}`, cx)); }
         else if ((e.key === "enter" || e.key === "space") && this.cur) run("space.select", { id: this.cur })
         else return;
         cx.stop_propagation();
