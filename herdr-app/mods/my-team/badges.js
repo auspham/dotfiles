@@ -24,3 +24,8 @@ export function reviewChip(t, card) {
 
 /** What a child works on, such as "login-fix on agent/login-fix", or "" for anyone else. */
 export const taskLine = (card) => (card.role === "child" && card.task ? `${card.task} on ${card.branch || "its branch"}` : "");
+
+/** The small note on a lent child, such as "lent by api-lead"; it says who borrowed it on hover. */
+export const lentNote = (t, card) =>
+  div().id(`lent-${card.address}`).min_w(0).truncate().text_size(10.5).text_color(t.dim)
+    .tooltip(`Lent by ${card.ownerName} to ${card.coordName}; it goes back when returned`).child(`lent by ${card.ownerName}`);

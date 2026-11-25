@@ -3,7 +3,7 @@
 import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
 import { checking, exec, focused, readTextFile, run, terminals, theme } from "herdr";
-import { coordinatorBadge, reviewChip, taskLine } from "./badges.js";
+import { coordinatorBadge, lentNote, reviewChip, taskLine } from "./badges.js";
 import { chattyPairs, messageFeed, readTail } from "./feed.js";
 import { messagesSection } from "./feed_view.js";
 import { coordinatorControls } from "./controls.js";
@@ -15,6 +15,7 @@ import { applyLabels, openInZed, readKnowledge, readSettings, writeSettings } fr
 const REFRESH_MS = 3000;
 const TAIL_LINES = 150;
 const MAX_AGENTS = 8;
+const CHILD_INDENT = 14;
 
 const LIST_SESSIONS = 'ls "$HOME"/.claude/sessions/*.json 2>/dev/null';
 const FIND_TRANSCRIPT = 'ls "$HOME"/.claude/projects/*/"$1".jsonl 2>/dev/null | head -1';
@@ -116,7 +117,7 @@ export default class Team extends View {
     const line = c.question || doing?.lastTool || doing?.lastText || c.title;
     const task = taskLine(c);
     return v_flex().id(`team-${c.address}`).gap(3).p(9).rounded(8).bg(t.raised).cursor_pointer()
-      .hover((h) => h.bg(t.hover))
+      .when(c.coordName !== "", (e) => e.ml(CHILD_INDENT)).hover((h) => h.bg(t.hover))
       .on_click(() => run("agent.focus", { terminal: c.address }))
       .child(h_flex().gap(8).items_center()
         .child(this.statusMark(t, c.status))
@@ -124,6 +125,7 @@ export default class Team extends View {
         .when(c.role === "coordinator", (e) => e.child(coordinatorBadge(t)))
         .when(c.role === "child", (e) => e.child(reviewChip(t, c)))
         .child(div().flex_none().text_size(11).text_color(t.dim).child(c.where || c.folder)))
+      .when(c.ownerName !== "", (e) => e.child(lentNote(t, c)))
       .when(task !== "", (e) => e.child(div().min_w(0).truncate().text_size(11).text_color(t.dim).child(task)))
       .child(div().min_w(0).truncate().text_size(11.5).text_color(c.question ? t.blocked : t.muted).child(line || "Nothing yet"));
   }
