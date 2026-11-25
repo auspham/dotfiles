@@ -181,6 +181,20 @@ out=$(run UserPromptSubmit s1 | context)
 grep -q 'Your coordinator is owner-agent (terminal t2)' <<<"$out" || fail "a returned child is re-told its coordinator"
 grep -q 'on loan' <<<"$out" && fail "a returned child is no longer told it is on loan"
 
+# The roster groups each child under the coordinator that controls it.
+reset; enable spA
+terminal t1 spA s1 "me" /w/app coordinator; terminal t2 spA s2 "a child" /w/wt child t3; terminal t3 spA s3 "boss" /w/app coordinator
+terminal t4 spA s4 "my child" /w/wt child t1; terminal t5 spA s5 "lent child" /w/wt child t1 t3; terminal t6 spA s6 "orphan" /w/wt child t9
+write_session s1 me-agent busy 100; write_session s2 kid-agent idle 200; write_session s3 boss-agent idle 300
+write_session s4 mine-agent idle 400; write_session s5 lent-agent idle 500; write_session s6 orphan-agent idle 600
+out=$(run SessionStart s1 | context)
+grep -A1 'boss-agent \[t3\].*(coordinator)' <<<"$out" | grep -q '^  - kid-agent \[t2\].*(child of boss-agent \[t3\])' || fail "a child is listed under its coordinator and names it"
+grep -q '^- mine-agent \[t4\].*(child of you)' <<<"$out" || fail "the reader's own children are marked as its own"
+grep -q '^- lent-agent \[t5\].*(child of you)' <<<"$out" || fail "a child lent to the reader is listed as the reader's"
+grep -q '^- orphan-agent \[t6\].*(child of terminal t9)' <<<"$out" || fail "a child of an absent coordinator names its terminal"
+terminal t4 spA s4 "my child" /w/wt child t3 t1
+run UserPromptSubmit s1 | context | grep -q '^  - mine-agent \[t4\].*(child of boss-agent \[t3\])' || fail "a coordinator's roster is repeated when one of the children is lent"
+
 # A damaged session file is skipped, not fatal.
 reset
 terminal t1 spA s1 "me" /w/app; terminal t2 spA s2 "fixing the login bug" /w/api coordinator

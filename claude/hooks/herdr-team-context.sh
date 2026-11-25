@@ -63,8 +63,19 @@ name_of() { jq -r --arg t "$1" --argjson reg "$registry" '(map(select(.address =
 coord_name=$(name_of "$coord_terminal")
 owner_terminal=$(jq -r '.owner' <<<"$own")
 
-roster=$(jq -r --argjson reg "$registry" --argjson max 8 '
-  .[:$max] | map("- \($reg[.session].name) [\(.address)] (herdr \(.where // "?")) \($reg[.session].status // "unknown")\(if .role == "coordinator" then " (coordinator)" elif .role == "child" then " (child)" else "" end): \(.title[:60]), in \(.folder | split("/") | last)") | join("\n")' <<<"$live")
+# Each listed coordinator is followed by its children, indented; then children of this agent or of an
+# absent coordinator; then everyone else.
+roster=$(jq -r --argjson reg "$registry" --arg me "$HC_TERMINAL_ID" --argjson max 8 '
+  . as $all
+  | (map(select(.role == "coordinator") | {key: .address, value: "\($reg[.session].name) [\(.address)]"}) | from_entries) as $coords
+  | [(.[] | select(.role == "coordinator") | . as $c | $c, ($all[] | select(.role == "child" and .coord == $c.address))),
+     (.[] | select(.role == "child" and $coords[.coord] == null)),
+     (.[] | select(.role != "child" and .role != "coordinator"))]
+  | .[:$max] | map(
+    (if .role == "child" and $coords[.coord] != null then "  " else "" end)
+    + "- \($reg[.session].name) [\(.address)] (herdr \(.where // "?")) \($reg[.session].status // "unknown")"
+    + (if .role == "coordinator" then " (coordinator)" elif .role == "child" then " (child of \(if .coord == $me then "you" else $coords[.coord] // "terminal \(.coord)" end))" else "" end)
+    + ": \(.title[:60]), in \(.folder | split("/") | last)") | join("\n")' <<<"$live")
 own_name=$(jq -rn --argjson reg "$registry" --arg me "$session" '$reg[$me].name // empty')
 space_name=$(jq -r '(.where // "this space") | split(" / ")[0]' <<<"$own")
 
@@ -83,9 +94,9 @@ if [ -n "$roster" ] || [ "$role" = coordinator ] || [ "$role" = child ]; then
   esac
 fi
 
-# What identifies the group, so a prompt only repeats the context when someone joined or left, or this
+# What identifies the group, so a prompt only repeats the context when someone joined or left, or a
 # child was lent or returned. The role stays the first field: the mode-off check below reads it.
-signature="$role|$coord_terminal|$(jq -r 'map(.session + ":" + .role) | sort | join(",")' <<<"$live")"
+signature="$role|$coord_terminal|$(jq -r 'map(.session + ":" + .role + ":" + .coord) | sort | join(",")' <<<"$live")"
 mkdir -p "$state_dir"
 previous=$(cat "$state_dir/$session.sig" 2>/dev/null || true)
 printf '%s' "$signature" > "$state_dir/$session.sig"
