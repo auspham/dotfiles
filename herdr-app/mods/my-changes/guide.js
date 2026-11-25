@@ -73,6 +73,9 @@ export function guideStats(items) {
 /** Whether the user may tell the coordinator the review is done: every Look closely file is ticked. @param {{ needYou: number, done: number }} stats @returns {boolean} */
 export const canFinish = (stats) => stats.done === stats.needYou;
 
+/** Whether a Done reviewing click should proceed: not while one is in flight, and not for a child already marked reviewed. @param {Record<string, string> | undefined} labels @param {boolean} busy @returns {boolean} */
+export const shouldFinish = (labels, busy) => !busy && labels?.review !== "reviewed";
+
 const TERMINAL_ADDRESS = /^t[0-9a-z]{1,8}$/;
 
 /** Who to tell, and what, when the user finishes reviewing; null without a usable coord and task label. @param {Record<string, string> | undefined} labels @returns {{ coord: string, text: string } | null} */

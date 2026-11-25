@@ -3,11 +3,11 @@
 import { div } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
 import { readTextFile, terminals, focused, exec } from "herdr";
-import { guidePath, parseGuide, headMoved, guideEntry, guideStats, canFinish, notifyTarget } from "./guide.js";
+import { guidePath, parseGuide, headMoved, guideEntry, guideStats, canFinish, notifyTarget, shouldFinish } from "./guide.js";
 
 /** The guide in force for the Changes root, re-read when its file changes. */
 export class GuideSource {
-  constructor() { this.source = null; this.guide = null; this.head = ""; this.seen = new Set(); this.address = null; this.note = ""; }
+  constructor() { this.source = null; this.guide = null; this.head = ""; this.seen = new Set(); this.address = null; this.note = ""; this.busy = false; }
 
   /** Loads the guide the focused terminal's labels name; true the first time one loads for this root. @param {string} root @param {string} head @param {string | null} on @returns {Promise<boolean>} */
   async sync(root, head, on) {
@@ -26,19 +26,24 @@ export class GuideSource {
   /** The banner for the Changes view `host`, or null without a guide. @param {object} t theme @param {any} host the Changes view */
   bar(t, host) {
     const branch = host.range === "branch", items = branch ? host.files.map((f) => ({ level: host.levelFor(f), reviewed: host.reviewed(f) })) : [];
-    return guideBanner(t, this.guide, branch ? guideStats(items) : null, { label: `Show since ${host.base?.name ?? "base"}`, run: (_e, cx) => host.setRange("branch", cx) }, { note: this.note, run: (_e, cx) => this.finish(host, cx) });
+    return guideBanner(t, this.guide, branch ? guideStats(items) : null, { label: `Show since ${host.base?.name ?? "base"}`, run: (_e, cx) => host.setRange("branch", cx) }, { note: this.note, busy: this.busy, run: (_e, cx) => this.finish(host, cx) });
   }
 
   /** Marks the focused child reviewed, reloads, then tells its coordinator without blocking. @param {any} host the Changes view @param {any} cx */
   finish(host, cx) {
-    const target = notifyTarget(terminals().find((x) => x.address === this.address)?.labels);
+    const labels = terminals().find((x) => x.address === this.address)?.labels;
+    if (!shouldFinish(labels, this.busy)) return;
+    this.busy = true;
+    const target = notifyTarget(labels);
     cx.spawn(async (cx) => {
-      const done = await exec("hc", ["label", this.address, "review=reviewed", "review_note=Reviewed by you"]).catch(() => null);
-      this.note = done?.code === 0 ? "" : "Could not mark it reviewed";
-      if (done?.code !== 0) { cx.notify(); return; }
-      host.refresh(cx);
-      const sent = target ? await exec("hc", ["send", target.coord, target.text]).catch(() => null) : null;
-      if (sent?.code !== 0) { this.note = "Marked reviewed; could not tell the coordinator"; cx.notify(); }
+      try {
+        const done = await exec("hc", ["label", this.address, "review=reviewed", "review_note=Reviewed by you"]).catch(() => null);
+        this.note = done?.code === 0 ? "" : "Could not mark it reviewed";
+        if (done?.code !== 0) { cx.notify(); return; }
+        host.refresh(cx);
+        const sent = target ? await exec("hc", ["send", target.coord, target.text]).catch(() => null) : null;
+        if (sent?.code !== 0) { this.note = "Marked reviewed; could not tell the coordinator"; cx.notify(); }
+      } finally { this.busy = false; cx.notify(); }
     });
   }
 
@@ -46,7 +51,7 @@ export class GuideSource {
   entry(path, sig) { return this.guide ? guideEntry(this.guide, path, sig, headMoved(this.guide, this.head)) : null; }
 }
 
-/** The banner, or null without a guide. @param {object} t theme @param {import("./guide.js").Guide | null} guide @param {ReturnType<typeof guideStats> | null} stats null outside the branch range, where counts mean nothing @param {{ label: string, run: Function }} onShow the Show-since button @param {{ note: string, run: Function }} onDone the Done reviewing button and its failure note */
+/** The banner, or null without a guide. @param {object} t theme @param {import("./guide.js").Guide | null} guide @param {ReturnType<typeof guideStats> | null} stats null outside the branch range, where counts mean nothing @param {{ label: string, run: Function }} onShow the Show-since button @param {{ note: string, busy: boolean, run: Function }} onDone the Done reviewing button, its failure note and whether a finish is in flight */
 export function guideBanner(t, guide, stats, onShow, onDone) {
   if (!guide) return null;
   const counts = stats ? `${stats.needYou} need you, ${stats.normal} normal, ${stats.skim} skim` : "";
@@ -58,9 +63,10 @@ export function guideBanner(t, guide, stats, onShow, onDone) {
         .hover((h) => h.bg(t.hover)).on_click(onShow.run).child(onShow.label))));
 }
 
-/** The Done reviewing button, dim and inert until canFinish. @param {object} t @param {ReturnType<typeof guideStats>} stats @param {{ run: Function }} onDone */
+/** The Done reviewing button, dim and inert until canFinish. @param {object} t @param {ReturnType<typeof guideStats>} stats @param {{ busy: boolean, run: Function }} onDone */
 function doneButton(t, stats, onDone) {
   const ready = canFinish(stats), b = div().id("guide-done").px(8).h(22).flex().items_center().rounded(5).bg(t.raised).child("Done reviewing");
+  if (ready && onDone.busy) return b.text_color(t.dim);
   return ready
     ? b.text_color(t.foreground).cursor_pointer().hover((h) => h.bg(t.hover)).on_click(onDone.run)
     : b.text_color(t.dim).tooltip(`Tick every Look closely file first (${stats.done}/${stats.needYou})`);

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { validateGuide, parseGuide, guideEntry, guideStats, canFinish, headMoved, guidePath, notifyTarget, CHANGED, NOT_IN_GUIDE } from "../guide.js";
+import { validateGuide, parseGuide, guideEntry, guideStats, canFinish, headMoved, guidePath, notifyTarget, shouldFinish, CHANGED, NOT_IN_GUIDE } from "../guide.js";
 import { levelOf } from "../triage.js";
 
 const HEAD = "a".repeat(40);
@@ -53,5 +53,9 @@ assert.equal(notifyTarget({ task: "login" }), null, "no coordinator label means 
 assert.equal(notifyTarget({ coord: "t2b" }), null, "no task label means no message");
 assert.equal(notifyTarget(undefined), null);
 for (const coord of ["--force", "t2b --force", "", "../x", "t2b\nx"]) assert.equal(notifyTarget({ coord, task: "login" }), null, "a malformed coordinator address is not used");
+
+assert.equal(shouldFinish({ review: "yours" }, false), true, "a first click finishes");
+assert.equal(shouldFinish({ review: "yours" }, true), false, "a second click while finishing sends nothing");
+assert.equal(shouldFinish({ review: "reviewed" }, false), false, "an already reviewed child is not announced again");
 
 console.log("my-changes guide: all checks passed");
