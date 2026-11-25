@@ -86,6 +86,7 @@ terminal t1 spA s1 "me" /w/app; jq 'del(.labels["claude.session"])' "$fx/t1.json
 write_session s1 me-agent busy 100
 run SessionStart s1 | context | grep -q 'coordinator of this herdr space' || fail "an agent without a session label becomes coordinator"
 labelled 'role=coordinator' || fail "and is labelled"
+grep -q 'No other coordinator is here right now' <<<"$(run SessionStart s1 | context)" || fail "a lone coordinator is told no other coordinator is here"
 rm -f "$root/labels.log"; reset; enable spA; terminal t1 spA s1 "me" /w/app; write_session s1 me-agent busy 100
 run UserPromptSubmit s1 | context | grep -q 'coordinator of this herdr space' || fail "an agent that missed the election at start gets it on its first prompt"
 
@@ -95,6 +96,14 @@ terminal t1 spA s1 "me" /w/app; terminal t2 spA s2 "other coordinator" /w/api co
 write_session s1 me-agent busy 100; write_session s2 other-agent idle 200
 run SessionStart s1 | context | grep -q 'coordinator of this herdr space' || fail "a second agent in the space gets the coordinator charter"
 labelled 'role=coordinator' || fail "a second agent beside a live coordinator is labelled coordinator too"
+out=$(run SessionStart s1 | context)
+grep -q 'Other coordinators here: other-agent \[t2\]\.' <<<"$out" || fail "a coordinator is told the other live coordinators by name and terminal"
+grep -q 'first agent' <<<"$out" && fail "a coordinator is not called the first agent"
+grep -q 'hcoord ls --all, hcoord diff, hc read' <<<"$out" || fail "a coordinator is told it may read any child"
+grep -q "ask that coordinator with SendMessage first" <<<"$out" || fail "a coordinator asks before changing another coordinator's child"
+grep -q 'hcoord lend <name> --to <terminal>' <<<"$out" || fail "a coordinator is told how to lend a child after agreeing"
+grep -q 'coordinators/me-agent.md' <<<"$out" || fail "a coordinator keeps its plan in a file named after its session"
+grep -q 'own Workstreams line' <<<"$out" || fail "a coordinator keeps only its own Workstreams line in the shared notes"
 
 # An agent that already has a role keeps it, without labelling again.
 reset; enable spA
@@ -118,6 +127,9 @@ terminal t1 spA s1 "me" /w/app; write_session s1 me-agent busy 100
 out=$(run SessionStart s1 | context)
 grep -q "$root/coord/spaces/spA" <<<"$out" || fail "a coordinator is told where its knowledge dir is"
 grep -q 'hcoord adopt' <<<"$out" && fail "a coordinator with no record is not told to adopt"
+write_session s1 "" busy 100; jq '.name = null' "$sessions/100.json" > "$sessions/100.tmp" && mv "$sessions/100.tmp" "$sessions/100.json"
+run SessionStart s1 | context | grep -q 'coordinators/t1.md' || fail "an unnamed coordinator's plan file is named after its terminal"
+write_session s1 me-agent busy 100
 mkdir -p "$root/coord/spaces/spA"; printf 'Goal: ship the thing' > "$root/coord/spaces/spA/notes.md"
 run SessionStart s1 | context | grep -q 'Goal: ship the thing' || fail "a coordinator is shown its notes"
 cat > "$root/coord/spaces/spA/ledger.jsonl" <<'LEDGER'

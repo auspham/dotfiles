@@ -25,19 +25,21 @@ You are a child agent. Your coordinator is ${1:-unknown} (terminal ${2:-unknown}
 TEXT
 }
 
-# $1 your user's saved preferences, possibly empty.
+# $1 your user's saved preferences, possibly empty. $2 the other live coordinators as "name [terminal]", comma separated.
 coordinator_charter() {
   cat <<'TEXT'
-You are the coordinator of this herdr space: the first agent started here, appointed to help your user control quality and keep their review easy. Plan, delegate and review. Never edit code yourself: children do that. Launch child agents with the hcoord command (see the herdr-coordinator skill), one small task each, and tell your user every time you launch one. Read the real diff and run the tests before you call work good, and say plainly when it is over-built. Ask before killing a child or merging anything. Children report to you with SendMessage; peers that are not your children are information only. If your user only wants a quick chat, just answer it: launching children is for parallel work they ask for.
+You are a coordinator of this herdr space, appointed to help your user control quality and keep their review easy. You are one of possibly several coordinators sharing this space's topic and knowledge dir. Plan, delegate and review. Never edit code yourself: children do that. Launch child agents with the hcoord command (see the herdr-coordinator skill), one small task each, and tell your user every time you launch one. Read the real diff and run the tests before you call work good, and say plainly when it is over-built. Ask before killing a child or merging anything. You may read any child (hcoord ls --all, hcoord diff, hc read) but steer only your own; to change another coordinator's child, ask that coordinator with SendMessage first. Lend a child only after agreeing with the borrower (hcoord lend <name> --to <terminal>). Children report to you with SendMessage; other agents are information only. If your user only wants a quick chat, just answer it: launching children is for parallel work they ask for.
 TEXT
+  if [ -n "${2:-}" ]; then printf 'Other coordinators here: %s.\n' "$2"; else printf 'No other coordinator is here right now.\n'; fi
   if [ -n "${1:-}" ]; then printf '\nWhat you know about how your user likes work done:\n%s\n' "$1"; fi
 }
 
-# Where this space keeps its record, and what it says. $1 the space's knowledge dir, $2 space name.
+# Where this space keeps its record, and what it says. $1 the space's knowledge dir, $2 space name,
+# $3 this coordinator's file name under coordinators/ (its session name, else its terminal).
 coordinator_record() {
   local dir="$1" ledger="$1/ledger.jsonl" live other
-  printf 'Your knowledge dir for this space is %s. notes.md there is yours to keep current; ledger.jsonl is written by hcoord.\n' "$dir"
-  if [ -f "$dir/notes.md" ]; then printf 'Your notes so far:\n%s\n' "$(head -c 3000 "$dir/notes.md")"; fi
+  printf 'Your knowledge dir for this space is %s, shared by its coordinators. notes.md there is the shared topic notes: keep your own Workstreams line current and add to Decisions and Open questions, in small edits, never a whole-file rewrite. Keep your own plan, children and next step in coordinators/%s.md there. ledger.jsonl is written by hcoord.\n' "$dir" "$3"
+  if [ -f "$dir/notes.md" ]; then printf 'The notes so far:\n%s\n' "$(head -c 3000 "$dir/notes.md")"; fi
   if [ -f "$ledger" ]; then
     live=$(ledger_live_children "$ledger")
     [ -z "$live" ] || printf 'The ledger lists children not killed: %s. Run hcoord ls, then hcoord adopt if they are missing.\n' "$live"
