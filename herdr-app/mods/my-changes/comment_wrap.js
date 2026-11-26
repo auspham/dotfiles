@@ -55,13 +55,13 @@ const space = (left, right) => (sameStyle(left, right) ? { ...left, s: " " } : {
 /** @param {TextLine} line @param {number} size */
 const linePx = (line, size) => line.reduce((w, sp) => w + textPx(sp.s, size), 0);
 
-/** Word-wraps one line of spans to `width` px at font `size`; an empty line stays one empty line. @param {Span[]} spans @param {number} width @param {number} [size] @returns {TextLine[]} */
+/** Word-wraps one line of spans to `width` px at font `size`; an empty line stays one empty line. The line's width is kept as words are added: measuring the whole line again for each word made a long answer slow enough to pass the app's render deadline. @param {Span[]} spans @param {number} width @param {number} [size] @returns {TextLine[]} */
 export function wrapSpans(spans, width, size = BODY_PX) {
-  const w = Math.max(60, width), out = [];
-  let line = [];
+  const w = Math.max(60, width), gapW = textPx(" ", size), out = [];
+  let line = [], used = 0;
   for (const word of words(spans).flatMap((wd) => (linePx(wd, size) > w ? breakWord(wd, w, size) : [wd]))) {
-    const next = line.length ? [...line, space(line[line.length - 1], word[0]), ...word] : word;
-    if (line.length && linePx(next, size) > w) { out.push(merge(line)); line = word; } else line = next;
+    const wordW = linePx(word, size);
+    if (!line.length) { line = [...word]; used = wordW; } else if (used + gapW + wordW > w) { out.push(merge(line)); line = [...word]; used = wordW; } else { line.push(space(line[line.length - 1], word[0]), ...word); used += gapW + wordW; }
   }
   return [...out, merge(line)];
 }

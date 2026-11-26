@@ -4,14 +4,29 @@
 /** @typedef {{ s: string } & Style} Span */
 
 // Italic is `*` only, never `_`, so snake_case names in agent answers stay as written.
+// Sticky, so each rule tries only at the cursor. Running every rule on the rest of the line at each character made a long plain line quadratic, past the app's render deadline.
 /** @type {{ re: RegExp, style: keyof Style | null, raw: boolean }[]} */
 const RULES = [
-  { re: /^\\([\\`*_[\]()#>+\-.!~])/, style: null, raw: true },
-  { re: /^(`+)(.+?)\1(?!`)/, style: "code", raw: true },
-  { re: /^\*\*(?=\S)(.+?)(?<=\S)\*\*/, style: "bold", raw: false },
-  { re: /^\*(?=[^\s*])(.+?)(?<=[^\s*])\*(?!\*)/, style: "italic", raw: false },
-  { re: /^\[([^\]]+)\]\([^)\s]*\)/, style: "link", raw: false },
+  { re: /\\([\\`*_[\]()#>+\-.!~])/y, style: null, raw: true },
+  { re: /(`+)(.+?)\1(?!`)/y, style: "code", raw: true },
+  { re: /\*\*(?=\S)(.+?)(?<=\S)\*\*/y, style: "bold", raw: false },
+  { re: /\*(?=[^\s*])(.+?)(?<=[^\s*])\*(?!\*)/y, style: "italic", raw: false },
+  { re: /\[([^\]]+)\]\([^)\s]*\)/y, style: "link", raw: false },
 ];
+// Every rule starts with one of these, so the text up to the next one is plain.
+const MARK = /[\\`*[]/g;
+
+/** The first rule that matches at `i`, or null. @param {string} line @param {number} i */
+function ruleAt(line, i) {
+  for (const r of RULES) { r.re.lastIndex = i; const m = r.re.exec(line); if (m) return { r, m }; }
+  return null;
+}
+
+/** Where the next possible marker after `i` sits, or the line's end. @param {string} line @param {number} i */
+function nextMark(line, i) {
+  MARK.lastIndex = i + 1;
+  return MARK.exec(line)?.index ?? line.length;
+}
 
 /** The inner text a rule matched: a code span's body is its second group. @param {RegExpExecArray} m */
 const body = (m) => (m.length > 2 ? m[2].trim() || m[2] : m[1]);
@@ -26,8 +41,8 @@ function push(out, sp) {
 export function parseInline(line, style = {}) {
   const out = [];
   for (let i = 0; i < line.length;) {
-    const rest = line.slice(i), hit = RULES.map((r) => ({ r, m: r.re.exec(rest) })).find((x) => x.m);
-    if (!hit?.m) { push(out, { ...style, s: line[i] }); i++; continue; }
+    const hit = ruleAt(line, i);
+    if (!hit) { const end = nextMark(line, i); push(out, { ...style, s: line.slice(i, end) }); i = end; continue; }
     const inner = { ...style, ...(hit.r.style ? { [hit.r.style]: true } : {}) };
     if (hit.r.raw) push(out, { ...inner, s: body(hit.m) });
     else parseInline(body(hit.m), inner).forEach((sp) => push(out, sp));

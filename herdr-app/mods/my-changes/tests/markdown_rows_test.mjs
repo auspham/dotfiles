@@ -45,4 +45,19 @@ assert.ok(postHeight(card.posts[1]) === 2 * PX.pad + PX.meta + PX.gap + rowsHeig
 const md = newThread({ id: "cmd0001", path: "a.js", anchor, q: "## **Why** use `x`?\nmore", now: 1 });
 assert.match(threadCard(md, 600, { collapsed: true, outdated: false, expanded: false, names: {} }).marker, /· Why use x\?$/, "a collapsed thread's marker shows its first line without markdown markers");
 
+// The app's script engine is far slower than node's and interrupts a render that runs past its deadline, so a long one-line answer must cost little work per character. Counted, not timed: the characters regexes may scan (a sticky regex tries one place) and the characters measured.
+function work(fn) {
+  const exec = RegExp.prototype.exec, iter = String.prototype[Symbol.iterator];
+  let chars = 0;
+  RegExp.prototype.exec = function (s) { chars += this.sticky ? 1 : String(s).length - (this.global ? this.lastIndex : 0); return exec.call(this, s); };
+  String.prototype[Symbol.iterator] = function () { chars += this.length; return iter.call(this); };
+  try { fn(); } finally { RegExp.prototype.exec = exec; String.prototype[Symbol.iterator] = iter; }
+  return chars;
+}
+const answer = (n) => "Kept MAX_RETRIES as a constant and added a flag for it, so the limit can change without a redeploy. ".repeat(n);
+const grows = (f) => work(() => f(answer(16))) / work(() => f(answer(8)));
+assert.ok(grows(parseInline) < 2.5, `parsing a long plain line does work linear in its length (doubling it multiplied the work by ${grows(parseInline).toFixed(1)})`);
+const perChar = work(() => wrapSpans([{ s: answer(8) }], 520)) / answer(8).length;
+assert.ok(perChar < 5, `wrapping a long line measures each character a few times, not once per word added after it on its line (${perChar.toFixed(1)} per character)`);
+
 console.log("my-changes markdown rows: all checks passed");
