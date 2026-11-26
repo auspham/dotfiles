@@ -1,5 +1,5 @@
 // Context menus (Herdr's items). Opened as a popup with
-// props { tab: "pane" | "tab" | "space" | "global", target }.
+// props { tab: "pane" | "tab" | "space" | "coordinator" | "global", target }.
 // ↑/↓ move, Enter runs, Esc closes. An item is [label, command, args];
 // a command "worktree" opens the worktree dialog instead.
 
@@ -21,7 +21,7 @@ async function checkout(folder, on) {
   return common.stdout.trim() === `${top.stdout.trim()}/.git` ? "main" : "linked";
 }
 
-function items(p, git) {
+function items(p, git, armed) {
   p = p ?? {};
   const tg = p.target ?? {};
   switch (p.tab) {
@@ -55,6 +55,11 @@ function items(p, git) {
         ...(inTab ? [["Close pane", "pane.close", { pane: tg.pane }]] : []),
       ];
     }
+    case "coordinator": {
+      // Destructive: the first click arms it, the second runs it (my-agents runs hcoord close and shows the result).
+      const n = `${tg.agents} agent${tg.agents === 1 ? "" : "s"}`;
+      return [[armed ? `Click again to close ${n}` : `Close coordinator and its ${n}`, `my-agents.close-coordinator:${tg.terminal}`, {}]];
+    }
     case "tab":
       return [
         ["Rename", "tab.rename", { id: tg.id }],
@@ -82,7 +87,7 @@ function items(p, git) {
 }
 
 function menuIcon(command, args) {
-  const name = command.endsWith(".close") ? "x" : command.endsWith(".rename") ? "square-pen" : command.endsWith(".new") ? "plus" : command === "worktree" ? "git-branch" : command === "app.help" ? "terminal" : command === "app.theme" ? "settings" : command === "pane.split" ? (args?.direction === "down" ? "panel-bottom" : "panel-right") : command === "pane.zoom" ? "square" : "terminal";
+  const name = command.endsWith(".close") || command.startsWith("my-agents.close-coordinator:") ? "x" : command.endsWith(".rename") ? "square-pen" : command.endsWith(".new") ? "plus" : command === "worktree" ? "git-branch" : command === "app.help" ? "terminal" : command === "app.theme" ? "settings" : command === "pane.split" ? (args?.direction === "down" ? "panel-bottom" : "panel-right") : command === "pane.zoom" ? "square" : "terminal";
   return `mods/workspace-chrome/${name}.svg`;
 }
 
@@ -98,6 +103,7 @@ export default class Menu extends View {
   init(_props, cx) {
     this.at = 0;
     this.git = null;
+    this.armed = false;
     this.handle = cx.focus_handle();
     this.handle.focus();
     const p = props();
@@ -111,8 +117,13 @@ export default class Menu extends View {
   }
 
   choose(i, cx) {
-    const it = items(props(), this.git)[i];
+    const it = items(props(), this.git, this.armed)[i];
     if (!it) return;
+    if (props()?.tab === "coordinator" && !this.armed) {
+      this.armed = true;
+      cx.notify();
+      return;
+    }
     closeOverlay(props()?.overlay);
     if (it[1] === "worktree") openOverlay({ mod: "worktree", kind: "dialog", ...(it[2].action === "open" ? { width: 560, height: 480 } : { width: 440, height: 260 }), props: it[2] });
     else run(it[1], it[2]);
@@ -120,7 +131,7 @@ export default class Menu extends View {
 
   render(cx) {
     const t = theme();
-    const list = items(props(), this.git);
+    const list = items(props(), this.git, this.armed);
     return v_flex()
       .id("menu")
       .track_focus(this.handle)
@@ -154,7 +165,7 @@ export default class Menu extends View {
             .hover((s) => s.bg(t.hover))
             .on_click((_e, cx) => this.choose(i, cx))
             .child(svg(menuIcon(it[1], it[2])).size(14).flex_none().text_color(t.muted))
-            .child(div().flex_1().child(it[0]))
+            .child(div().flex_1().when(this.armed, (el) => el.text_color(t.blocked)).child(it[0]))
             .child(div().text_size(11).text_color(t.dim).child(shortcut(it[1], it[2])))),
         ),
       );

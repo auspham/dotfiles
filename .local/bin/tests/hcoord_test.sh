@@ -33,6 +33,7 @@ cat > "$bin/herdr-app" <<'STUB'
 #!/usr/bin/env bash
 fx="$(dirname "$0")/../fx"; log="$(dirname "$0")/../calls.log"
 echo "herdr-app $*" >> "$log"
+[ "$1" != ls ] || { cat "$fx/../app-ls.json"; exit; }
 case "$2" in
   tab.new)
     n=$(( $(ls "$fx" | wc -l) + 8 )); space=$(sed -n 's/.*--space \([^ ]*\).*/\1/p' <<<"$*")
@@ -286,5 +287,60 @@ grep -qxF 'skipped kept (controlled by c1)' <<<"$taken" || fail "adopt skips a c
 mine_again=$(TEST_ME=c1 run adopt)
 grep -qxF 'skipped mine (controlled by c5)' <<<"$mine_again" || { echo "$mine_again" >&2; fail "an adopt after a lend decides the controller by event order"; }
 grep -q '^adopted kept ' <<<"$mine_again" || fail "adopt still reports the caller's own children"
+
+# The user closes a coordinator and its children from the Agents list, outside any terminal.
+printf '{"address":"q1","labels":{"herdr.space":"spQ","role":"coordinator","herdr.tab":"tbq"}}' > "$fx/q1.json"
+printf '{"address":"q2","labels":{"herdr.space":"spQ","role":"coordinator"}}' > "$fx/q2.json"
+spq="$COORDINATOR_HOME/spaces/spQ/ledger.jsonl"
+for c in tidy:q1 messy:q1 fresh-file:q1 other:q2; do TEST_ME="${c#*:}" run spawn "${c%%:*}" "Task" >/dev/null; done
+tidy_t=$(event spawn tidy "$spq" | jq -r .terminal); messy_t=$(event spawn messy "$spq" | jq -r .terminal)
+fresh_t=$(event spawn fresh-file "$spq" | jq -r .terminal); other_t=$(event spawn other "$spq" | jq -r .terminal)
+[ "$(printf '%s\n' "$tidy_t" "$messy_t" "$fresh_t" "$other_t" | sort -u | wc -l | tr -d ' ')" = 4 ] || fail "the close fixtures are four distinct terminals"
+echo dirty >> "$repo/.agent-worktrees/messy/a.txt"
+echo new > "$repo/.agent-worktrees/fresh-file/new.txt"
+printf '{"spaces":[{"tabs":[{"id":"tbq","terminals":[{"terminal":"q1","pane":"pq1"},{"terminal":"q9","pane":"pq9"}]}]}]}' > "$root/app-ls.json"
+TEST_ME=q1 run close tidy 2>/dev/null && fail "close needs a coordinator: a child name is refused"
+TEST_ME='' run close 2>/dev/null && fail "close needs the coordinator's terminal"
+: > "$root/calls.log"
+TEST_ME='' run close "$tidy_t" 2>/dev/null && fail "close refuses a terminal that is not a coordinator"
+calls | grep -q 'hc kill' && fail "a refused close stops nothing"
+closed=$(TEST_ME='' run close q1 2>&1) || { echo "$closed" >&2; fail "close runs from the app, without HC_TERMINAL_ID"; }
+grep -qxF "removed the worktree of tidy; branch agent/tidy is kept" <<<"$closed" || { echo "$closed" >&2; fail "close removes a clean worktree"; }
+grep -qxF "kept the worktree of messy at $repo/.agent-worktrees/messy: uncommitted changes" <<<"$closed" || { echo "$closed" >&2; fail "close keeps a dirty worktree and says why"; }
+grep -qxF "kept the worktree of fresh-file at $repo/.agent-worktrees/fresh-file: uncommitted changes" <<<"$closed" || fail "an untracked file counts as uncommitted"
+grep -qxF "closed the coordinator and 3 agents; every agent/* branch is kept" <<<"$closed" || fail "close ends with a summary"
+[ ! -d "$repo/.agent-worktrees/tidy" ] && [ -d "$repo/.agent-worktrees/messy" ] && [ -d "$repo/.agent-worktrees/fresh-file" ] || fail "only the clean worktree is gone"
+for b in tidy messy fresh-file; do git -C "$repo" rev-parse --verify -q "agent/$b" >/dev/null || fail "close keeps branch agent/$b"; done
+[ "$(event kill tidy "$spq" | jq -r '.worktree_removed|tostring' )|$(event kill messy "$spq" | jq -r '.worktree_removed|tostring')|$(event kill tidy "$spq" | jq -r .coord)" = "true|false|q1" ] || fail "close records a kill per child under its coordinator"
+for t in "$tidy_t" "$messy_t" "$fresh_t"; do
+  calls | grep -qx "hc kill $t" && calls | grep -qx "hc rm $t" || { dump; fail "close stops and forgets child $t"; }
+  calls | grep -qx "herdr-app do tab.close --id tb${t#t}" || fail "close closes the tab of $t"
+done
+calls | grep -qx "hc kill q1" || fail "close stops the coordinator"
+calls | grep -qx "herdr-app do pane.close --pane pq1" || fail "a coordinator sharing its tab has its pane closed"
+calls | grep -q "tab.close --id tbq" && fail "and its tab stays open"
+calls | grep -q "$other_t" && fail "another coordinator's child is untouched"
+[ -f "$fx/$other_t.json" ] || fail "another coordinator's child keeps its terminal"
+# A worktree git refuses to remove is kept, and the close goes on to the rest.
+printf '{"address":"q4","labels":{"herdr.space":"spQ","role":"coordinator"}}' > "$fx/q4.json"
+TEST_ME=q4 run spawn locked "Task" >/dev/null; TEST_ME=q4 run spawn after-lock "Task" >/dev/null
+locked_t=$(event spawn locked "$spq" | jq -r .terminal); after_t=$(event spawn after-lock "$spq" | jq -r .terminal)
+[ "$locked_t" != "$after_t" ] || fail "the locked fixtures are distinct terminals"
+git -C "$repo" worktree lock "$repo/.agent-worktrees/locked"
+printf '{"spaces":[{"tabs":[{"id":"tbq4","terminals":[{"terminal":"q4","pane":"pq4"}]}]}]}' > "$root/app-ls.json"
+: > "$root/calls.log"
+locked_out=$(TEST_ME='' run close q4 2>/dev/null) || fail "close succeeds when git refuses one worktree"
+grep -qxF "kept the worktree of locked at $repo/.agent-worktrees/locked: git could not remove it" <<<"$locked_out" || { echo "$locked_out" >&2; fail "close says git could not remove a worktree"; }
+[ "$(event kill locked "$spq" | jq -r '.worktree_removed|tostring')" = false ] || fail "the kill records that the worktree stayed"
+[ ! -d "$repo/.agent-worktrees/after-lock" ] && calls | grep -qx "hc kill $after_t" || fail "close goes on to the next child"
+calls | grep -qx "hc kill q4" || fail "and still stops the coordinator"
+git -C "$repo" worktree unlock "$repo/.agent-worktrees/locked"
+
+printf '{"address":"q3","labels":{"herdr.space":"spQ","role":"coordinator"}}' > "$fx/q3.json"
+printf '{"spaces":[{"tabs":[{"id":"tbq3","terminals":[{"terminal":"q3","pane":"pq3"}]}]}]}' > "$root/app-ls.json"
+: > "$root/calls.log"
+[ "$(TEST_ME='' run close q3)" = "closed the coordinator and 0 agents; every agent/* branch is kept" ] || fail "a coordinator without children closes alone"
+calls | grep -qx "herdr-app do tab.close --id tbq3" || fail "a coordinator alone in its tab has its tab closed"
+calls | grep -q "pane.close" && fail "and no pane is closed separately"
 
 echo "hcoord: all checks passed"

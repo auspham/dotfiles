@@ -6,15 +6,18 @@
 #   hcoord review <name> approved|changes|pending|reviewing|yours [note]
 #   hcoord handoff <name> [--summary TEXT]   (stdin: one "high|normal|skim<TAB>path<TAB>reason" per file; hands the committed work to the user)
 #   hcoord kill <name> [--worktree] [--force]
+#   hcoord close <coordinator-terminal>   (the user, from the Agents list: stops a coordinator and its children, removing only clean worktrees)
 #   hcoord lend <name> --to <terminal>   hcoord return <name>   (lend a child to another coordinator in the space; the borrower or the lender returns it)
 #   hcoord adopt [--from <space-id>]   (take over the children recorded in a space's ledger, or report them orphaned; without --from it skips children a live coordinator controls)
-# review, handoff, kill and lend act only on a child whose coord is the caller; a child name is unique across the space.
-# spawn, review, handoff, kill, lend and return also append to $COORDINATOR_HOME/spaces/<space>/ledger.jsonl (default ~/.claude/coordinator), the record a new coordinator adopts from.
+# review, handoff, kill and lend act only on a child whose coord is the caller; close acts as the coordinator it names. A child name is unique across the space.
+# spawn, review, handoff, kill, close, lend and return also append to $COORDINATOR_HOME/spaces/<space>/ledger.jsonl (default ~/.claude/coordinator), the record a new coordinator adopts from.
 set -euo pipefail
 
 die() { echo "hcoord: $*" >&2; exit 1; }
 for tool in hc herdr-app jq git; do command -v "$tool" >/dev/null 2>&1 || die "$tool is not installed"; done
 me="${HC_TERMINAL_ID:-}"
+# The user runs close from the app, outside any terminal, on behalf of the coordinator it names.
+if [ "${1:-}" = close ]; then me="${2:-}"; [ -n "$me" ] || die "give the coordinator's terminal"; fi
 [ -n "$me" ] || die "run this from the coordinator's own herdr terminal"
 
 . "$(dirname "${BASH_SOURCE[0]}")/hcoord-ledger.sh"
@@ -142,25 +145,65 @@ cmd_handoff() {
   ledger_add handoff "$name" "$(jq -cn --arg guide "$out" --arg head "$head" '{guide: $guide, head: $head}')"
 }
 
-cmd_kill() {
-  local name="${1:?name}" remove=false force=false
-  shift; for flag in "$@"; do case "$flag" in --worktree) remove=true ;; --force) force=true ;; *) die "unknown option $flag" ;; esac; done
-  local t worktree tab; t=$(child_of "$name")
+# Stops a child, closes its tab and forgets its terminal; with remove=true also removes its worktree. The branch is always kept.
+# Fails, after recording the kill, when the worktree could not be removed.
+stop_child() {
+  local t="$1" name="$2" remove="$3" force="$4" worktree tab removed=false
   worktree=$(label_of "$t" worktree); tab=$(label_of "$t" herdr.tab)
-  # Check before stopping anything, so a refusal leaves the agent running.
-  if $remove && ! $force && [ -n "$(git -C "$worktree" status --porcelain)" ]; then
-    die "$name has uncommitted changes; commit them or use --force to discard them"
-  fi
   hc kill "$t" >/dev/null 2>&1 || true
   [ -z "$tab" ] || herdr-app do tab.close --id "$tab" >/dev/null 2>&1 || true
   hc rm "$t" >/dev/null 2>&1 || true
   if $remove; then
     local root opts=(); root="$(dirname "$(dirname "$worktree")")"
     ! $force || opts+=(--force)
-    git -C "$root" worktree remove ${opts[@]+"${opts[@]}"} "$worktree"
-    echo "removed the worktree; branch agent/$name is kept"
+    if git -C "$root" worktree remove ${opts[@]+"${opts[@]}"} "$worktree"; then
+      removed=true; echo "removed the worktree of $name; branch agent/$name is kept"
+    else
+      echo "kept the worktree of $name at $worktree: git could not remove it"
+    fi
   fi
-  ledger_add kill "$name" "{\"worktree_removed\": $remove}"
+  ledger_add kill "$name" "{\"worktree_removed\": $removed}"
+  [ "$remove" = "$removed" ]
+}
+
+cmd_kill() {
+  local name="${1:?name}" remove=false force=false
+  shift; for flag in "$@"; do case "$flag" in --worktree) remove=true ;; --force) force=true ;; *) die "unknown option $flag" ;; esac; done
+  local t worktree; t=$(child_of "$name"); worktree=$(label_of "$t" worktree)
+  # Check before stopping anything, so a refusal leaves the agent running.
+  if $remove && ! $force && [ -n "$(git -C "$worktree" status --porcelain)" ]; then
+    die "$name has uncommitted changes; commit them or use --force to discard them"
+  fi
+  stop_child "$t" "$name" "$remove" "$force"
+}
+
+# The user closes a coordinator and every child it controls. Labels go with a terminal, so everything is read before anything stops.
+cmd_close() {
+  [ "$(label_of "$me" role)" = coordinator ] || die "$me is not a coordinator"
+  local list t name worktree status count=0 place
+  list=$(children)
+  place=$(herdr-app ls 2>/dev/null | jq -c --arg t "$me" 'first(.spaces[].tabs[] | select(any(.terminals[]; .terminal == $t)) | {tab: .id, pane: (.terminals[] | select(.terminal == $t) | .pane), alone: (.terminals | length == 1)}) // {}') || place='{}'
+  for t in $list; do
+    name=$(label_of "$t" task); worktree=$(label_of "$t" worktree)
+    if [ ! -d "$worktree" ]; then
+      stop_child "$t" "$name" false false
+    elif ! status=$(git -C "$worktree" status --porcelain 2>/dev/null); then
+      echo "kept the worktree of $name at $worktree: git could not read it"; stop_child "$t" "$name" false false
+    elif [ -n "$status" ]; then
+      echo "kept the worktree of $name at $worktree: uncommitted changes"; stop_child "$t" "$name" false false
+    else
+      stop_child "$t" "$name" true false || true
+    fi
+    count=$((count + 1))
+  done
+  hc kill "$me" >/dev/null 2>&1 || true
+  if [ "$(jq -r '.alone // false' <<<"$place")" = true ]; then
+    herdr-app do tab.close --id "$(jq -r .tab <<<"$place")" >/dev/null 2>&1 || true
+  elif [ -n "$(jq -r '.pane // empty' <<<"$place")" ]; then
+    herdr-app do pane.close --pane "$(jq -r .pane <<<"$place")" >/dev/null 2>&1 || true
+  fi
+  hc rm "$me" >/dev/null 2>&1 || true
+  echo "closed the coordinator and $count agents; every agent/* branch is kept"
 }
 
 case "${1:-}" in
@@ -170,8 +213,9 @@ case "${1:-}" in
   review) shift; cmd_review "$@" ;;
   handoff) shift; cmd_handoff "$@" ;;
   kill) shift; cmd_kill "$@" ;;
+  close) cmd_close ;;
   lend) shift; cmd_lend "$@" ;;
   return) shift; cmd_return "$@" ;;
   adopt) shift; cmd_adopt "$@" ;;
-  *) sed -n '2,12p' "$0" | sed 's/^# \{0,1\}//'; exit 2 ;;
+  *) sed -n '2,13p' "$0" | sed 's/^# \{0,1\}//'; exit 2 ;;
 esac

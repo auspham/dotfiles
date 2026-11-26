@@ -2,12 +2,13 @@
 
 import { View, div, image, svg } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
-import { agents, appHome, readTextFile, nextCommand, terminals, panes, focused, spaces, run, theme, shared, setShared, setAgentOrder, openOverlay, closeOverlay, props, window, layout } from "herdr";
+import { agents, appHome, readTextFile, nextCommand, terminals, panes, focused, spaces, run, exec, notify, theme, shared, setShared, setAgentOrder, openOverlay, closeOverlay, props, window, layout } from "herdr";
 
 import { ARCHIVE_FILE, parseArchived, splitArchived } from "./archive.js";
 import { archivedSection } from "./archive_view.js";
 import { parentOf, isLent, displayName, lentNote } from "./parents.js";
 import { reviewState } from "./review.js";
+import { liveChildren, closeToast } from "./close.js";
 
 function find(node, id) {
   if (node?.id === id) return node;
@@ -91,7 +92,15 @@ export default class Agents extends View {
     this.handle = cx.focus_handle();
     this.hadFocus = false;
     cx.timer.every(200, (cx) => { const on = this.holds(); if (on !== this.hadFocus) { this.hadFocus = on; cx.notify(); } });
-    cx.spawn(async (cx) => { for (;;) { if ((await nextCommand()) === "focus") { this.handle.focus(); setShared("nav.focus", "agents"); } cx.notify(); } });
+    cx.spawn(async (cx) => {
+      for (;;) {
+        const c = await nextCommand();
+        if (c === "focus") { this.handle.focus(); setShared("nav.focus", "agents"); }
+        // From my-menu, which closes before hcoord is done, so the result is shown from here.
+        else if (c.startsWith("close-coordinator:")) this.closeCoordinator(c.slice("close-coordinator:".length), cx);
+        cx.notify();
+      }
+    });
     this.folded = new Set();
     // Each agent's last state and when it changed (ms), kept across restarts.
     try { this.changed = JSON.parse(localStorage.getItem("changed") ?? "{}"); } catch { this.changed = {}; }
@@ -232,6 +241,13 @@ export default class Agents extends View {
     e.state = "seen"; e.closed = Date.now();
     try { localStorage.setItem("recent", JSON.stringify(this.recent)); } catch { /* storage can be unavailable */ }
     cx.notify();
+  }
+
+  closeCoordinator(addr, cx) {
+    cx.spawn(async () => {
+      const r = await exec("hcoord", ["close", addr], { timeout: 120000 }).catch((e) => ({ code: 1, stdout: "", stderr: String(e) }));
+      notify(closeToast(r));
+    });
   }
 
   peek(addr) {
@@ -473,6 +489,10 @@ export default class Agents extends View {
           cx.notify();
         })
         .on_click(() => run("pane.focus", { pane: a.pane }))
+        .when(roles.get(a.address) === "coordinator", (el) => el.on_mouse_down("right", (_e, cx) => {
+          cx.stop_propagation();
+          openOverlay({ mod: "my-menu", kind: "popup", width: 260, props: { tab: "coordinator", target: { terminal: a.address, agents: liveChildren(all, a.address) } } });
+        }))
         .when(Boolean(pic), el => el.child(div().id(`agent-fold-${a.address}`)
           .when(subs.length > 0, el => el.on_click((_e, cx) => {
             cx.stop_propagation();
