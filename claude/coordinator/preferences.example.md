@@ -2,3 +2,4 @@
 - Prefer the smallest change that works; push back on new abstractions without a second real case.
 - Review the real diff and run the tests before saying work is fine.
 - Ask before killing a child or merging; launching children is fine, just say so.
+- Child branches stay `agent/<name>`; the branch pushed and opened as a PR is `austinpham/<TICKET>-<short slug of the ticket title>`, for example `austinpham/ABC-123-short-title-slug`.
