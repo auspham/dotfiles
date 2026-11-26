@@ -11,7 +11,9 @@ import { followFocus } from "./review_pane.js";
 import { isReviewPane, followedTerminal, paneLocation, paneShown, openReviewPane, publishReview, publishThreads, paneThreads, requestToggle, takeToggle } from "./review_link.js";
 import { paneView, syncPane } from "./review_pane_view.js";
 import { CommentStore } from "./comment_store.js";
-import { sender, pollReplies } from "./comment_send.js";
+import { sender, pollReplies, readReplies, askAgent } from "./comment_send.js";
+import { pickTarget } from "./comment_prompt.js";
+import { applyChatReplies, chatListening, settleChat } from "./ask_agent.js";
 import { listening } from "./comment_replies.js";
 import { commentLayout, blockView } from "./comment_view.js";
 import { drawnPx } from "./comment_layout.js";
@@ -309,12 +311,19 @@ export default class Changes extends View {
 
   publishComments() { publishThreads(this); }
 
-  // Answers agents sent back with hreview, read while a thread's newest comment went to an agent.
+  // Answers agents sent back with hreview, read while a thread's newest comment or an Ask question went to an agent.
   pollComments(cx) {
-    if (this.pollingComments || !listening(this.comments.threads)) return;
+    if (this.pollingComments || !(listening(this.comments.threads) || chatListening(this.chat.messages))) return;
     this.pollingComments = true;
     cx.spawn(async (cx) => {
-      try { if (await pollReplies(this.comments, this.on ?? null)) { publishThreads(this); cx.notify(); } }
+      try {
+        if (await pollReplies(this.comments, this.on ?? null)) { publishThreads(this); cx.notify(); }
+        if (chatListening(this.chat.messages)) {
+          const chat = this.chat, replies = await readReplies(this.on ?? null);
+          const { messages, changed } = applyChatReplies(chat.messages, replies);
+          if (changed && chat === this.chat) { chat.messages = messages; this.scrollThreads = true; this.saveChat(); cx.notify(); }
+        }
+      }
       finally { this.pollingComments = false; }
     });
   }
@@ -339,8 +348,7 @@ export default class Changes extends View {
       const messages = Object.entries(old).flatMap(([path, list]) => list.map((th) => ({ id: th.id, path, label: th.label, q: th.q, a: th.a, status: th.status, at: th.at })));
       chat = { session: null, messages: messages.sort((x, y) => x.at - y.at) };
     }
-    chat.messages ??= [];
-    for (const m of chat.messages) if (m.status === "pending") { m.status = "error"; m.a = "Interrupted: the panel reloaded before the answer arrived."; }
+    chat.messages = settleChat(chat.messages ?? []);
     this.chat = chat;
   }
   saveChat() { this.write(this.chatKey(), JSON.stringify(this.chat)); }
@@ -419,16 +427,29 @@ export default class Changes extends View {
     return `About ${this.open} (${where}), ${snippet.label}:\n\n${FENCE}diff\n${snippet.text}\n${FENCE}\n\n${question}`;
   }
 
+  // Who answers the Ask box: the live agent the panel follows when it works in this folder, else claude -p.
+  askTarget() { return pickTarget(terminals().find((x) => x.address === followedTerminal()), this.root); }
+
   ask(_kind, cx) {
     const question = this.question.value().trim();
     if (!question || !this.root || this.chat.messages.some((m) => m.status === "pending")) return;
-    const snippet = this.open ? this.snippet() : null;
+    const snippet = this.open ? this.snippet() : null, target = this.askTarget();
     const message = { id: Date.now().toString(36), path: this.open ?? null, label: snippet?.label ?? "", q: question, a: "", status: "pending", at: Date.now() };
+    if (target.kind === "agent") message.to = { address: target.address, name: target.name };
     this.chat.messages.push(message);
     this.scrollThreads = true;
     this.question.set_value(""); this.hasQuestion = false; this.sel = null;
     const root = this.root, on = this.on, prompt = this.compose(question, snippet), model = this.modelId, effort = this.effortId;
     this.saveChat(); cx.notify();
+    if (message.to) {
+      const to = message.to;
+      cx.spawn(async (cx) => {
+        const failed = await askAgent(message.id, prompt, to, on ?? null, cx);
+        message.status = failed ? "error" : "sent"; message.a = failed ?? "";
+        this.scrollThreads = true; this.saveChat(); cx.notify();
+      });
+      return;
+    }
     cx.spawn(async (cx) => {
       try {
         if (this.chat.role !== ASK_ROLE) this.chat.session = null;
@@ -456,8 +477,9 @@ export default class Changes extends View {
 
   // One exchange, read like a chat: the question is a right-aligned bubble, the answer sits under the assistant's name beside a rail.
   threadCard(m, t, last) {
-    const answer = m.status === "pending"
-      ? h_flex().gap(7).items_center().text_size(12).text_color(t.working).child(svg("mods/workspace-chrome/spinner.svg").size(13).flex_none().text_color(t.working).spin(900)).child("Working…")
+    const working = m.to ? (m.status === "sent" ? `Sent to ${m.to.name}. Waiting for its reply…` : `Sending to ${m.to.name}…`) : "Working…";
+    const answer = m.status === "pending" || m.status === "sent"
+      ? h_flex().gap(7).items_center().text_size(12).text_color(t.working).child(svg("mods/workspace-chrome/spinner.svg").size(13).flex_none().text_color(t.working).spin(900)).child(working)
       : m.status === "error"
         ? div().text_size(12).text_color(t.blocked).child(m.a)
         : div().text_size(12.5).text_color(t.foreground).child(TextView.markdown(`answer-${m.id}`, m.a).selectable(true));
@@ -472,8 +494,8 @@ export default class Changes extends View {
         .child(div().max_w_full().min_w(0).px(12).py(8).rounded(12).bg(t.accent + "26").border_1().border_color(t.accent + "66").text_size(12.5).font_semibold().text_color(t.foreground).child(m.q)))
       .child(v_flex().gap(5)
         .child(h_flex().gap(6).items_center().min_w(0).overflow_hidden().text_size(11)
-          .child(div().flex_none().font_semibold().text_color(t.ansi5).child("Claude"))
-          .child(div().min_w(0).truncate().text_color(t.dim).child("· reads, edits and tests the code, reads the agents' logs"))
+          .child(div().flex_none().font_semibold().text_color(t.ansi5).child(m.to?.name ?? "Claude"))
+          .child(div().min_w(0).truncate().text_color(t.dim).child(m.to ? "· the agent working in this folder" : "· reads, edits and tests the code, reads the agents' logs"))
           .child(div().flex_1())
           .when(m.status === "done", (e) => e.child(div().id(`copy-${m.id}`).flex_none().px(6).h(18).flex().items_center().rounded(4).cursor_pointer()
             .text_color(this.copied === m.id ? t.ansi2 : t.dim).hover((h) => h.bg(t.hover).text_color(t.foreground)).tooltip("Copy this answer")
@@ -494,7 +516,7 @@ export default class Changes extends View {
       .cursor_pointer().hover((h) => h.bg(t.hover).text_color(t.foreground)).on_click(click).tooltip(tip).child(label);
     const chip = (id, label, tip, kind) => div().id(id).px(7).h(20).flex().items_center().rounded(5).bg(t.raised).text_size(11).text_color(t.muted)
       .cursor_pointer().hover((h) => h.bg(t.hover).text_color(t.foreground)).on_mouse_down("left", (ev, cx) => { cx.stop_propagation(); this.openMenu(kind, ev.position); }).tooltip(tip).child(label);
-    const ready = this.hasQuestion && !busy;
+    const ready = this.hasQuestion && !busy, target = this.askTarget(), who = target.kind === "agent" ? target.name : "Claude";
     return v_flex().flex_none()
       .when(messages.length === 0, (e) => e.border_t(1).border_color(t.border))
       .when(messages.length > 0, (e) => e.child(div().id("threads-handle").w_full().h(7).flex_none().flex().items_center().cursor_row_resize()
@@ -509,14 +531,15 @@ export default class Changes extends View {
       .when(messages.length > 0, (e) => e.child(v_flex().id("threads").h(Math.min(this.threadH, Math.max(90, this.drawn(this.areaH) - 140))).overflow_y_scroll().track_scroll(this.threadScroll).p(12).gap(12).border_b(1).border_color(t.border).children(messages.map((m, i) => this.threadCard(m, t, i === messages.length - 1)))))
       .child(v_flex().p(10).gap(7)
         .child(h_flex().gap(6).items_center().flex_wrap().text_size(11).text_color(t.muted)
-          .child(div().flex_1().min_w(120).truncate().child(this.sel ? `Asking about ${snippet.label} · Shift-click extends, Esc clears` : this.open ? "Asking about this file. Click a line to ask about it, Shift-click to extend." : "Ask anything about this space."))
-          .child(chip("ask-model", `Model: ${MODELS.find(([id]) => id === this.modelId)?.[1] ?? "Default"} \u25be`, "Choose the model for your next question", "model"))
-          .child(chip("ask-effort", `Effort: ${EFFORTS.find(([id]) => id === this.effortId)?.[1] ?? "Default"} \u25be`, "Choose the effort for your next question", "effort"))
+          .child(div().flex_1().min_w(120).truncate().child(this.sel ? `Asking ${who} about ${snippet.label} · Shift-click extends, Esc clears` : this.open ? `Asking ${who} about this file. Click a line to ask about it, Shift-click to extend.` : `Ask ${who} anything about this space.`))
+          .when(target.kind === "claude", (e) => e
+            .child(chip("ask-model", `Model: ${MODELS.find(([id]) => id === this.modelId)?.[1] ?? "Default"} \u25be`, "Choose the model for your next question", "model"))
+            .child(chip("ask-effort", `Effort: ${EFFORTS.find(([id]) => id === this.effortId)?.[1] ?? "Default"} \u25be`, "Choose the effort for your next question", "effort")))
           .when(Boolean(this.sel), (e) => e.child(small("ask-clear", "Clear", "Ask about the whole file instead", (_e, cx) => { this.sel = null; cx.notify(); })))
           .when(messages.length > 0, (e) => e.child(small("ask-new", "New chat", "Start over: the assistant forgets this conversation", (_e, cx) => this.newChat(cx)))))
         .child(h_flex().gap(8)
           .child(div().id("ask-box").flex_1().min_w(0).h(32).px(10).flex().items_center().rounded(8).border_1().border_color(this.asking ? t.accent : t.border).cursor_text().on_mouse_down("left", (_e, cx) => cx.stop_propagation()).child(Input.new(this.question).h_full().text_size(12).text_color(t.foreground)))
-          .child(div().id("ask-inline").h(32).px(14).flex().items_center().rounded(8).text_size(12).tooltip("One conversation for this space: it reads and edits the code and reads the agents' logs")
+          .child(div().id("ask-inline").h(32).px(14).flex().items_center().rounded(8).text_size(12).tooltip(target.kind === "agent" ? `Sends your question to ${who}, which answers here` : "One conversation for this space: it reads and edits the code and reads the agents' logs")
             .bg(ready ? t.solid : t.raised).text_color(ready ? t.solid_foreground : t.dim)
             .when(ready, (e) => e.cursor_pointer()).on_click((_e, cx) => { if (ready) this.ask("inline", cx); }).child(busy ? "Thinking…" : "Ask"))));
   }
