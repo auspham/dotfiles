@@ -25,12 +25,13 @@ export function openComposer(host, cx) {
 /** @param {any} host @param {any} cx */
 export function closeComposer(host, cx) { host.composer = null; setInput(host, ""); host.handle.focus(); cx.notify(); }
 
-/** A click on an inline block: the Comment row opens the bar, a card's header or collapsed marker folds or unfolds the thread and leaves the bar as it is, and the rest of a thread opens it in the bar. True when the key was a block's. @param {any} host @param {string} key @param {any} cx */
-export function clickBlock(host, key, cx) {
+/** A click on an inline block: the Comment row opens the bar, a card's header or collapsed marker folds or unfolds the thread and leaves the bar as it is, its Resolve row resolves it as the bar's Resolve does, and the rest of a thread opens it in the bar. True when the key was a block's. @param {any} host @param {string} key @param {any} cx @param {boolean} [secondary] a right-click, which opens the thread rather than resolving it */
+export function clickBlock(host, key, cx, secondary = false) {
   const hit = blockClick(key);
   if (!hit) return false;
   if (hit.op === "add") { openComposer(host, cx); return true; }
   if (hit.op === "fold") { host.comments.toggle(hit.id); cx.notify(); return true; }
+  if (hit.op === "resolve" && !secondary) { act(host, "resolve", hit.id, cx); return true; }
   host.composer = { mode: "thread", id: hit.id };
   setInput(host, "");
   if (writeMode(host.composer, host.comments.find(hit.id) ?? null)) host.commentInput.focus();
@@ -55,12 +56,13 @@ export function submitComposer(host, cx) {
   closeComposer(host, cx);
 }
 
-/** @param {any} host @param {string} op @param {string} id @param {any} cx */
+/** Acts on a thread and closes the bar, unless the bar holds another thread or a new comment, as when a card's Resolve row is clicked: then what is typed there stays. @param {any} host @param {string} op @param {string} id @param {any} cx */
 export function act(host, op, id, cx) {
   if (op === "collapse") host.comments.toggle(id);
   else host.comments.act(op, { root: host.root, path: host.open, id });
   host.publishComments();
-  closeComposer(host, cx);
+  if (host.composer && !(host.composer.mode === "thread" && host.composer.id === id)) cx.notify();
+  else closeComposer(host, cx);
 }
 
 /** Sends every draft as one batch; from the review pane, through the side panel. @param {any} host @param {any} cx */

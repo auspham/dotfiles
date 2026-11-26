@@ -10,11 +10,12 @@ import { markdownRows, contentRows, firstRows, rowsHeight, MD } from "./comment_
 /** @typedef {import("./comment_rows.js").Row} Row */
 /** rows: the markdown laid out; queued: waits for Send all; more: rows of text hidden behind Show more. */
 /** @typedef {{ who: "you" | "agent", name: string, at: number | null, rows: Row[], tone: "body" | "error", queued: boolean, more: number }} Post */
-/** @typedef {{ head: string, chip: import("./comment_status.js").Chip, posts: Post[], foot: string }} Card */
+/** resolvable: the card has a Resolve row under its reply box. */
+/** @typedef {{ head: string, chip: import("./comment_status.js").Chip, posts: Post[], foot: string, resolvable: boolean }} Card */
 /** @typedef {{ collapsed: boolean, outdated: boolean, expanded: boolean, names: Record<string, string> }} CardState */
 
 // Px of each part; the view draws these. MARGIN is above and below the card, BORDER its top plus bottom edge.
-export const PX = { margin: 6, border: 2, head: 34, pad: 10, meta: 22, gap: 4, line: 20, note: 18, foot: 50, marker: 34, padX: 14, indent: 26, maxW: 680 };
+export const PX = { margin: 6, border: 2, head: 34, pad: 10, meta: 22, gap: 4, line: 20, note: 18, foot: 50, act: 34, marker: 34, padX: 14, indent: 26, maxW: 680 };
 // Text past this many rows folds behind Show more until the thread is opened.
 export const FOLD_LINES = 6;
 
@@ -54,7 +55,8 @@ export function threadCard(t, cardW, s) {
   if (t.resolved || s.collapsed) return { marker: markerText(t) };
   const head = s.outdated ? `${headLabel(t.anchor)}, no longer in this diff` : headLabel(t.anchor);
   const posts = t.exchanges.flatMap((e) => exchangePosts(e, textWidth(cardW), s));
-  return { head, chip: threadChip(t, s.names), posts, foot: footOf(t) };
+  const chip = threadChip(t, s.names);
+  return { head, chip, posts, foot: footOf(t), resolvable: chip.tone !== "queued" && chip.tone !== "waiting" };
 }
 
 /** The first line of a thread's first comment, as plain text. @param {Thread} t */
@@ -75,11 +77,11 @@ export const postHeight = (p) => 2 * PX.pad + PX.meta + PX.gap + rowsHeight(p.ro
 
 /** A card's full height in the list, margins included. @param {Card | { marker: string }} c */
 export function cardHeight(c) {
-  const inner = "marker" in c ? PX.marker : PX.head + c.posts.reduce((h, p) => h + postHeight(p), 0) + PX.foot;
+  const inner = "marker" in c ? PX.marker : PX.head + c.posts.reduce((h, p) => h + postHeight(p), 0) + PX.foot + (c.resolvable ? PX.act : 0);
   return 2 * PX.margin + PX.border + inner;
 }
 
-/** The height of an open card's header item in the list: its top margin, top border and header row. The body item takes the rest of cardHeight. */
+/** The height of an open card's header item in the list: its top margin, top border and header row. The posts, reply box and Resolve row under it are items of their own. */
 export const HEAD_H = PX.margin + PX.border / 2 + PX.head;
 
 /** "just now", "5m ago", "3h ago" or "2d ago". @param {number} at @param {number} now */

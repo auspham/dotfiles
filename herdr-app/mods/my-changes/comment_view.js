@@ -46,11 +46,11 @@ export function commentLayout(host, splitting) {
   return host.commentCache;
 }
 
-/** One block's slot in the list: a thread card's header, its body, its marker, or the Comment row, placed under the code text. A header has only the card's top margin and a body only its bottom one. The list's on_item_click handles its clicks. @param {Block} b @param {object} t theme @param {{ width: number, cardW: number, open: string | null }} lay */
+/** One block's slot in the list: a piece of a thread card, its marker, or the Comment row, placed under the code text. The card's top margin goes on its header and its bottom margin on its last piece. The list's on_item_click handles its clicks. @param {Block} b @param {object} t theme @param {{ width: number, cardW: number, open: string | null }} lay */
 export function blockView(b, t, { width, cardW, open }) {
-  const top = b.part === "body" ? 0 : PX.margin, bottom = b.part === "head" ? 0 : PX.margin;
+  const top = !b.part || b.part === "head" || b.part === "marker" ? PX.margin : 0, bottom = !b.part || b.last ? PX.margin : 0;
   const slot = div().w(width).h(b.h).flex_none().pl(LEFT).pt(top).pb(bottom).cursor_pointer();
   const inner = div().w(cardW).h(b.h - top - bottom);
   if (!b.card || !b.thread || !b.part) return slot.child(inner.child(addView(t)));
-  return slot.child(inner.child(cardView(b.card, t, { now: Date.now(), open: b.thread.id === open, part: b.part, folded: !b.thread.resolved })));
+  return slot.child(inner.child(cardView(b.card, t, { now: Date.now(), open: b.thread.id === open, part: b.part, last: Boolean(b.last), folded: !b.thread.resolved })));
 }

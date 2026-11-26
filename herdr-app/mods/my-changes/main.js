@@ -1109,7 +1109,7 @@ export default class Changes extends View {
         .child(div().w_full().min_w(splitting ? 0 : this.diffWidth).h_full().child(v_virtual_list("changes-diff", lay.items.length, lay.heights, (i) => ("block" in lay.items[i] ? `${this.mode}${lay.items[i].block.key}` : `${this.mode}${lay.items[i].row}`),
           (range) => lay.items.slice(range.start, range.end).map(draw)).size_full().track_scroll(this.diffScroll)
             .on_item_click((key, cx) => { const extend = this.shift; this.shift = false; if (!clickBlock(this, key, cx)) this.pickRow(key, extend, cx); })
-            .on_item_secondary_click((key, _ev, cx) => { if (!clickBlock(this, key, cx)) this.pickRow(key, true, cx); }))))
+            .on_item_secondary_click((key, _ev, cx) => { if (!clickBlock(this, key, cx, true)) this.pickRow(key, true, cx); }))))
       .child(Scrollbar.vertical("changes-diff").viewport_from_layout().absolute().inset_0())
       .when(splitting && this.split.length > 0, (e) => e.child(div().id("split-handle").absolute().top(0).bottom(0).left((this.leftW ?? 0) - 3).w(7).cursor_col_resize()
         .on_mouse_down("left", (ev, cx) => {

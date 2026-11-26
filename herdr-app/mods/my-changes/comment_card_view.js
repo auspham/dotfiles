@@ -1,4 +1,4 @@
-// Draws a thread card from its model, at the heights comment_card.js counts. Drawn inside the virtual list's renderer, so nothing here has handlers: an open card is two list items, its header (which folds the thread) and its body (which opens it), and a marker is one.
+// Draws a thread card from its model, at the heights comment_card.js counts. Drawn inside the virtual list's renderer, so nothing here has handlers: an open card is a list item per part: its header (which folds the thread), its posts and reply box (which open it in the bar) and its Resolve row; a marker is one.
 
 import { div, svg } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
@@ -41,25 +41,28 @@ function postView(t, { post, first, now }) {
     .when(post.queued, (e) => e.child(small("Queued, goes out with Send all", t.ansi3).h(PX.note).text_size(11.5)));
 }
 
-/** The faux input that says the card is clickable. @param {object} t @param {string} text @param {boolean} resolvable */
-const footView = (t, text, resolvable) => h_flex().h(PX.foot).flex_none().px(PX.padX).gap(12).items_center().border_t_1().border_color(t.border)
-  .child(div().flex_1().min_w(0).h(30).px(10).flex().items_center().rounded(6).border_1().border_color(t.border).bg(t.background).text_color(t.muted).truncate().child(text))
-  .when(resolvable, (e) => e.child(div().flex_none().text_size(12).text_color(t.muted).child("Resolve")));
+/** The faux input; a click on it opens the thread in the bar with the input focused. @param {object} t @param {string} text */
+const footView = (t, text) => h_flex().h(PX.foot).flex_none().px(PX.padX).items_center().border_t_1().border_color(t.border)
+  .child(div().flex_1().min_w(0).h(30).px(10).flex().items_center().rounded(6).border_1().border_color(t.border).bg(t.background).text_color(t.muted).truncate().child(text));
+
+/** @param {object} t */
+const resolveView = (t) => h_flex().h(PX.act).flex_none().px(PX.padX).items_start()
+  .child(div().h(24).px(10).flex().items_center().rounded(6).border_1().border_color(t.border).text_size(12).text_color(t.foreground).child("Resolve"));
 
 /** @param {object} t @param {"down" | "right"} dir */
 const chevron = (t, dir) => svg(`mods/workspace-chrome/chevron-${dir}.svg`).size(11).flex_none().text_color(t.muted);
 
-/** One piece of a thread card, filling the box it is given: the header, the posts and footer under it, or the one-line marker. @param {Card | { marker: string }} c @param {object} t theme @param {{ now: number, open: boolean, part: "head" | "body" | "marker", folded: boolean }} env open: the bar is on this thread; folded: the marker unfolds the thread on click, so it shows the chevron */
-export function cardView(c, t, { now, open, part, folded }) {
+/** One piece of a thread card, filling the box it is given: the header, the posts, the reply box, the Resolve row, or the one-line marker. @param {Card | { marker: string }} c @param {object} t theme @param {{ now: number, open: boolean, part: "head" | "body" | "foot" | "resolve" | "marker", last: boolean, folded: boolean }} env open: the bar is on this thread; last: the piece closes the card's bottom edge; folded: the marker unfolds the thread on click, so it shows the chevron */
+export function cardView(c, t, { now, open, part, last, folded }) {
   const box = v_flex().size_full().border_color(open ? t.accent : t.border).bg(t.raised).overflow_hidden().font_family(SANS).text_size(13).text_color(t.foreground);
   if ("marker" in c) return box.rounded(6).border_1().child(h_flex().h(PX.marker).px(PX.padX).gap(8).items_center().text_size(12).text_color(t.muted)
     .when(folded, (e) => e.child(chevron(t, "right"))).child(div().flex_1().min_w(0).truncate().child(c.marker)));
   if (part === "head") return box.rounded_t(6).border_t_1().border_x_1()
     .child(h_flex().h(PX.head).flex_none().px(PX.padX).gap(8).items_center().border_b_1().border_color(t.border).child(chevron(t, "down"))
       .child(div().flex_1().min_w(0).truncate().text_size(12).font_medium().text_color(t.muted).child(c.head)).child(chipView(t, c.chip)));
-  return box.rounded_b(6).border_b_1().border_x_1()
-    .children(c.posts.map((post, i) => postView(t, { post, first: i === 0, now })))
-    .child(footView(t, c.foot, c.chip.tone !== "queued" && c.chip.tone !== "waiting"));
+  const side = box.border_x_1().when(last, (e) => e.rounded_b(6).border_b_1());
+  if (part === "body") return side.children(c.posts.map((post, i) => postView(t, { post, first: i === 0, now })));
+  return side.child(part === "foot" ? footView(t, c.foot) : resolveView(t));
 }
 
 /** The Comment row under a selection, as a small accent card. @param {object} t */

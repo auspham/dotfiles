@@ -39,7 +39,7 @@ const t = newThread({ id: "cabc123", path: "a.js", anchor, q: "Why?", now: 1 });
 const done = patchLast([t], t.id, { status: "done", a: sample, to: { address: "t7", name: "fixer" } })[0];
 const card = threadCard(done, 600, { collapsed: false, outdated: false, expanded: true, names: {} });
 assert.equal(card.posts[1].rows.length, markdownRows(sample, 600 - PX.border - 2 * PX.padX - PX.indent - 4).length, "an answer's post draws its markdown rows");
-assert.equal(cardHeight(card), 2 * PX.margin + PX.border + PX.head + card.posts.reduce((h, p) => h + postHeight(p), 0) + PX.foot, "a card's height counts the rendered markdown, so it never overlaps the next row");
+assert.equal(cardHeight(card), 2 * PX.margin + PX.border + PX.head + card.posts.reduce((h, p) => h + postHeight(p), 0) + PX.foot + PX.act, "a card's height counts the rendered markdown and its Resolve row, so it never overlaps the next row");
 assert.ok(postHeight(card.posts[1]) === 2 * PX.pad + PX.meta + PX.gap + rowsHeight(card.posts[1].rows), "a post's height is its rows' height plus its name row and padding");
 
 const md = newThread({ id: "cmd0001", path: "a.js", anchor, q: "## **Why** use `x`?\nmore", now: 1 });

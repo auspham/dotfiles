@@ -51,7 +51,7 @@ assert.equal(card(long, { ...open, expanded: true }).posts[1].rows.length, 40, "
 const p1 = { who: "you", name: "You", at: 1, rows: [{ kind: "text", h: 20 }, { kind: "gap", h: 8 }, { kind: "code", h: 30 }], tone: "body", queued: false, more: 0 };
 assert.equal(postHeight(p1), 2 * PX.pad + PX.meta + PX.gap + 58, "a post is its name row and the height of its rows plus padding");
 assert.equal(postHeight({ ...p1, queued: true, more: 3 }), postHeight(p1) + PX.note + PX.line, "a queued note and Show more each add a row");
-assert.equal(cardHeight({ head: "h", chip: { label: "", tone: "queued" }, posts: [p1, p1], foot: "" }), 2 * PX.margin + PX.border + PX.head + 2 * postHeight(p1) + PX.foot, "a card is its header, posts and footer plus margins");
+assert.equal(cardHeight({ head: "h", chip: { label: "", tone: "queued" }, posts: [p1, p1], foot: "", resolvable: false }), 2 * PX.margin + PX.border + PX.head + 2 * postHeight(p1) + PX.foot, "a card is its header, posts and footer plus margins");
 assert.equal(cardHeight({ marker: "m" }), 2 * PX.margin + PX.border + PX.marker, "a marker card is one row");
 assert.deepEqual([cardWidth(2000, 40), cardWidth(500, 40)], [PX.maxW, 460], "a card stays narrow on a wide pane and fits a narrow one");
 const wordy = { ...t, exchanges: [{ ...t.exchanges[0], q: "word ".repeat(80) }] }, all = { ...open, expanded: true };
@@ -65,14 +65,18 @@ assert.deepEqual(heights, [30, 20, 20, 70, 20], "gives each item its own height 
 assert.deepEqual(layoutItems(2, [40, 20], []).heights, [40, 20], "keeps split rows' wrapped heights");
 
 const parts = threadBlocks(t, card(t), 3), clickOn = (b) => blockClick(`unified${b.key}`);
-assert.deepEqual(parts.map(clickOn), [{ op: "fold", id: t.id }, { op: "open", id: t.id }], "clicking a card's chevron collapses it instead of opening it, and the rest of the card still opens it");
-assert.equal(parts.reduce((h, b) => h + b.h, 0), cardHeight(card(t)), "an open card's header and body add up to its full height, so rows below do not shift");
-assert.deepEqual(parts.map((b) => b.after), [3, 3], "both halves of a card sit under the same row");
+assert.deepEqual(parts.map(clickOn), [{ op: "fold", id: t.id }, { op: "open", id: t.id }, { op: "open", id: t.id }], "clicking a card's chevron collapses it instead of opening it, and its posts and reply box still open it");
+assert.equal(parts.reduce((h, b) => h + b.h, 0), cardHeight(card(t)), "an open card's pieces add up to its full height, so rows below do not shift");
+assert.deepEqual(parts.map((b) => [b.after, b.last]), [[3, false], [3, false], [3, true]], "every piece of a card sits under the same row, and only the last closes its bottom edge");
+assert.deepEqual([card(t).resolvable, card(sent).resolvable], [false, false], "a queued or waiting card has no Resolve row");
+const replied = threadBlocks(answered, card(answered), 3);
+assert.deepEqual(replied.map((b) => [b.part, clickOn(b).op]), [["head", "fold"], ["body", "open"], ["foot", "open"], ["resolve", "resolve"]], "an answered card's reply box opens it in the bar and its Resolve row is a click of its own");
+assert.deepEqual([replied.reduce((h, b) => h + b.h, 0), replied.map((b) => b.last)], [cardHeight(card(answered)), [false, false, false, true]], "the Resolve row is counted in the card's height and closes its bottom edge");
 assert.deepEqual(threadBlocks(t, card(t, { ...open, collapsed: true }), 3).map(clickOn), [{ op: "fold", id: t.id }], "clicking a collapsed thread's marker expands it");
 const done = { ...t, resolved: true };
 assert.deepEqual(threadBlocks(done, threadCard(done, 600, { ...open, collapsed: true }), 3).map(clickOn), [{ op: "open", id: t.id }], "a resolved thread's marker still opens it in the bar, even when it is also collapsed");
 assert.deepEqual([blockClick(`split${ADD_KEY}`), blockClick("unified12")], [{ op: "add" }, null], "the Comment row opens the composer and a diff row is no block");
-assert.ok(parts.every((b) => !/\d$/.test(b.key)), "a block key never ends in a digit, which pickRow reads as a row index");
+assert.ok([...parts, ...replied].every((b) => !/\d$/.test(b.key)), "a block key never ends in a digit, which pickRow reads as a row index");
 
 const ctx = (n, text) => ({ kind: " ", old: n, number: n, text });
 const rows = [{ kind: "@", text: "@@" }, ctx(1, "a"), { kind: "-", number: 2, text: "old" }, { kind: "+", number: 2, text: "let x = 2" }, ctx(3, "b")];
