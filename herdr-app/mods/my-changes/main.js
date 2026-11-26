@@ -1,5 +1,5 @@
 import { View, div, svg } from "gpui-kit";
-import { v_flex, h_flex, InputState, TextareaState, Input, Scrollbar, v_virtual_list, TextView, ScrollHandle } from "gpui-base";
+import { v_flex, h_flex, InputState, TextareaState, Input, Scrollbar, v_virtual_list, TextView, ScrollHandle, VirtualListScrollHandle } from "gpui-base";
 import { spaces, panes, focused, terminals, exec, readTextFile, watchFolder, theme, settings, nextCommand, layout, run, shared, setShared, home, openOverlay, closeOverlay, props } from "herdr";
 import { langFor, highlightRows, hashLines, wrapTokens } from "./highlight.js";
 import { coordinatorNote } from "./coordinator.js";
@@ -8,7 +8,7 @@ import { guideBase } from "./guide.js";
 import { childBase } from "./children.js";
 import { LEVELS, LEVEL_LABEL, VERDICT_SCHEMA, pathFlags, diffFlags, isTest, isCode, testsChangedCode, levelOf, splitDiff, triagePrompt } from "./triage.js";
 import { followFocus } from "./review_pane.js";
-import { isReviewPane, followedTerminal, paneLocation, paneShown, openReviewPane, publishReview, publishThreads, paneThreads, requestToggle, takeToggle } from "./review_link.js";
+import { isReviewPane, followedTerminal, paneLocation, paneShown, openReviewPane, publishReview, publishThreads, paneThreads, paneList, requestToggle, takeToggle, takeJump } from "./review_link.js";
 import { paneView, syncPane } from "./review_pane_view.js";
 import { CommentStore } from "./comment_store.js";
 import { sender, pollReplies, readReplies, askAgent } from "./comment_send.js";
@@ -19,6 +19,7 @@ import { commentLayout, blockView } from "./comment_view.js";
 import { drawnPx } from "./comment_layout.js";
 import { openComposer, closeComposer, clickBlock, submitComposer } from "./comment_actions.js";
 import { composerBar } from "./comment_bar_view.js";
+import { listShown } from "./comment_list.js";
 
 let lastLocation = null;
 function location() {
@@ -168,6 +169,8 @@ export default class Changes extends View {
     this.flags = new Map(); this.verdicts = {}; this.triaging = false; this.guide = new GuideSource();
     this.sel = null; this.chat = { session: null, messages: [] }; this.hasQuestion = false; this.threadScroll = ScrollHandle.new(); this.scrollThreads = false; this.threadH = clamp(Number(this.read("threadH")) || 240, 90, 900); this.areaH = 700; this.vdrag = null;
     this.listH = Number(this.read("listH")) || 0; this.listSeen = 200; this.panelH = 800; this.ldrag = null; // listH 0: as tall as its rows
+    // The review pane's comment list: its rows, whether it is wanted, and the thread a click on a row scrolls the diff to once it is drawn.
+    this.diffScroll = VirtualListScrollHandle.new(); this.list = []; this.listOn = this.read("commentList") !== "0"; this.jump = null;
     // The review pane copy draws what the side panel publishes, taken in by a timer since render must not change state; it reads no git state of its own.
     this.comments = new CommentStore(isReviewPane()); this.sendDrafts = sender(this, this.comments); this.composer = null;
     this.commentInput = TextareaState.new({ placeholder: "Leave a comment. Ctrl+Enter queues it" });
@@ -178,10 +181,18 @@ export default class Changes extends View {
     this.commentInput.on("submit", (e, cx) => { if (e?.secondary) submitComposer(this, cx); });
     this.commentInput.on("focus", (_e, cx) => { this.typing = true; cx.notify(); });
     this.commentInput.on("blur", (_e, cx) => { this.typing = false; cx.notify(); });
-    if (isReviewPane()) { cx.timer.every(250, (cx) => { syncPane(this, key(), cx); if (this.comments.mirrorFrom(paneThreads(this.root, this.open))) cx.notify(); }); return; }
+    if (isReviewPane()) {
+      cx.timer.every(250, (cx) => {
+        syncPane(this, key(), cx);
+        if (this.comments.mirrorFrom(paneThreads(this.root, this.open))) cx.notify();
+        const list = paneList(this.root);
+        if (JSON.stringify(list) !== JSON.stringify(this.list)) { this.list = list; cx.notify(); }
+      });
+      return;
+    }
     this.refresh(cx);
     cx.timer.every(10000, (cx) => this.refresh(cx));
-    cx.timer.every(400, (cx) => { this.applyFocus(cx); const path = takeToggle(this); if (path) this.toggleReviewed(path, cx, true); if (this.comments.takeRequest(this.root, this.sendDrafts, cx)) { publishThreads(this); cx.notify(); } });
+    cx.timer.every(400, (cx) => { this.applyFocus(cx); const path = takeToggle(this); if (path) this.toggleReviewed(path, cx, true); const jump = takeJump(this); if (jump && this.files.some((f) => f.path === jump)) this.pick(jump, cx, true); if (this.comments.takeRequest(this.root, this.sendDrafts, cx)) { publishThreads(this); cx.notify(); } });
     cx.timer.every(3000, (cx) => this.pollComments(cx));
     cx.spawn(async (cx) => { for (;;) { this.command(await nextCommand(), cx); cx.notify(); } });
     // The chat runs tests too; watch for its runs while it answers.
@@ -916,6 +927,8 @@ export default class Changes extends View {
           try { await this.load(this.open, context); }
           catch { if (key() === context) this.setLines(["Cannot preview this diff (too large or unreadable)"]); }
         }
+        // The pane's comment list follows the file list even when the open file stays the same.
+        publishThreads(this);
       } catch (e) { if (key() === context) this.error = String(e); }
       finally { this.loading = false; cx.notify(); if (this.pending) { this.pending = false; this.refresh(cx); } }
       if (this.root) this.loadTests(cx);
@@ -1054,8 +1067,9 @@ export default class Changes extends View {
       .when(enabledSeg, (e) => e.cursor_pointer().hover((h) => h.bg(on ? t.selected : t.hover))).on_click(enabledSeg ? click : () => {}).child(label);
   }
 
-  // The open file's name, the Unified/Split switch, Open in Zed and Mark reviewed.
+  // The open file's name, the Unified/Split switch (and in the review pane the comment list's toggle, off when the pane is too narrow for it), Open in Zed and Mark reviewed.
   fileBar(openFile, t) {
+    const roomy = listShown(true, this.drawn(this.barW));
     return v_flex().flex_none().px(12).py(6).gap(6).border_b(1).border_color(t.border)
       .on_size_change((size, cx) => { if (Math.abs(size.width - this.barW) > 1) { this.barW = size.width; cx.notify(); } })
       .child(h_flex().gap(8).items_center()
@@ -1067,6 +1081,8 @@ export default class Changes extends View {
           .child(this.seg(t, "mode-unified", "Unified", this.mode === "unified", true, (_e, cx) => this.setMode("unified", cx)))
           .child(this.seg(t, "mode-split", "Split", this.mode === "split", true, (_e, cx) => this.setMode("split", cx)))
           .when(!this.record, (e) => e.child(this.seg(t, "expand", "⤢", false, true, (_e, cx) => { this.toggleExpand(); cx.notify(); }))))
+        .when(Boolean(this.record), (e) => e.child(this.seg(t, "comment-list-toggle", "Comments", this.listOn && roomy, roomy,
+          (_e, cx) => { this.listOn = !this.listOn; this.write("commentList", this.listOn ? "1" : "0"); cx.notify(); })))
         .child(div().flex_1())
         .child(div().id("open-zed").h(26).px(10).flex().flex_none().items_center().rounded(6).cursor_pointer().text_size(12).bg(t.raised).text_color(t.muted)
           .hover((h) => h.bg(t.hover).text_color(t.foreground)).tooltip("Open in Zed at the selected line, or the first change (key: o)")
@@ -1080,6 +1096,9 @@ export default class Changes extends View {
   // The open file's diff, unified or split, with the split's drag handle.
   diffBox(t, splitting) {
     const lay = commentLayout(this, splitting);
+    if (this.jump && Date.now() - this.jump.at > 5000) this.jump = null;
+    const jumpAt = this.jump?.path === this.open ? lay.items.findIndex((it) => "block" in it && it.block.thread?.id === this.jump.id) : -1;
+    if (jumpAt >= 0) { this.diffScroll.scroll_to_item(jumpAt); this.jump = null; }
     const draw = (it) => ("block" in it ? blockView(it.block, t, lay)
       : splitting ? this.splitRow(this.split[it.row], t, this.isSel(it.row), lay.marked.has(it.row)) : this.diffRow(this.rows[it.row], t, this.isSel(it.row), lay.marked.has(it.row)));
     // The comment bar sits under the diff, not over it, so it never covers the last rows.
@@ -1088,7 +1107,7 @@ export default class Changes extends View {
       .on_size_change((size, cx) => { if (Math.abs(size.width - this.diffW) > 1) { this.diffW = size.width; cx.notify(); } })
       .child(div().id("changes-diff-x").size_full().overflow_x_scrollbar()
         .child(div().w_full().min_w(splitting ? 0 : this.diffWidth).h_full().child(v_virtual_list("changes-diff", lay.items.length, lay.heights, (i) => ("block" in lay.items[i] ? `${this.mode}${lay.items[i].block.key}` : `${this.mode}${lay.items[i].row}`),
-          (range) => lay.items.slice(range.start, range.end).map(draw)).size_full()
+          (range) => lay.items.slice(range.start, range.end).map(draw)).size_full().track_scroll(this.diffScroll)
             .on_item_click((key, cx) => { const extend = this.shift; this.shift = false; if (!clickBlock(this, key, cx)) this.pickRow(key, extend, cx); })
             .on_item_secondary_click((key, _ev, cx) => { if (!clickBlock(this, key, cx)) this.pickRow(key, true, cx); }))))
       .child(Scrollbar.vertical("changes-diff").viewport_from_layout().absolute().inset_0())

@@ -57,9 +57,15 @@ export function threadCard(t, cardW, s) {
   return { head, chip: threadChip(t, s.names), posts, foot: footOf(t) };
 }
 
+/** The first line of a thread's first comment, as plain text. @param {Thread} t */
+export const firstLine = (t) => plainText(parseBlocks(t.exchanges[0].q)[0]?.lines[0] ?? "");
+
+/** How many answers a thread has had. @param {Thread} t */
+export const replyCount = (t) => t.exchanges.filter((e) => e.status === "done").length;
+
 /** @param {Thread} t */
 function markerText(t) {
-  const first = plainText(parseBlocks(t.exchanges[0].q)[0]?.lines[0] ?? ""), answers = t.exchanges.filter((e) => e.status === "done").length;
+  const first = firstLine(t), answers = replyCount(t);
   if (t.resolved) return `Resolved · ${headLabel(t.anchor)} · ${first}`;
   return `${headLabel(t.anchor)} · ${answers} repl${answers === 1 ? "y" : "ies"} · ${first}`;
 }

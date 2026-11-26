@@ -58,7 +58,7 @@ export function reviewChange(prev, next) {
   return JSON.stringify(prev) === JSON.stringify(next) ? null : "marks";
 }
 
-/** What to do with the Mark reviewed request in shared state: the path to toggle (or null) and the request to remember as handled. @param {unknown} req @param {number | null} seen @param {string | null} root @param {number} now @returns {{ path: string | null, seen: number | null }} */
+/** What to do with a request in shared state that names a path (Mark reviewed, or a jump from the comment list): the path to act on (or null) and the request to remember as handled. @param {unknown} req @param {number | null} seen @param {string | null} root @param {number} now @returns {{ path: string | null, seen: number | null }} */
 export function toggleToApply(req, seen, root, now) {
   const r = /** @type {any} */ (req);
   if (!r || typeof r !== "object" || !Number.isFinite(r.ts) || r.ts === seen) return { path: null, seen };

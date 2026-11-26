@@ -61,12 +61,17 @@ export function splitSources(split, rows) {
   return split.map((row) => sources(row).map((r) => at.get(r)).filter((i) => i !== undefined));
 }
 
+/** The line numbers a reader would quote for an anchor: its new lines, or the removed ones when it has none. @param {Anchor} anchor */
+export function quotedLines(anchor) {
+  const fresh = anchor.lines.filter((l) => l.side === "new").map((l) => l.n);
+  return fresh.length ? fresh : anchor.lines.map((l) => l.n);
+}
+
 /** "line 12", "lines 12-14", or "removed lines 3-4" for an anchor, as a reader would quote it. @param {Anchor} anchor */
 export function anchorLabel(anchor) {
-  const fresh = anchor.lines.filter((l) => l.side === "new").map((l) => l.n);
-  const list = fresh.length ? fresh : anchor.lines.map((l) => l.n);
+  const list = quotedLines(anchor), removed = !anchor.lines.some((l) => l.side === "new");
   const lo = Math.min(...list), hi = Math.max(...list), many = lo !== hi;
-  return `${fresh.length ? "" : "removed "}line${many ? "s" : ""} ${many ? `${lo}-${hi}` : lo}`;
+  return `${removed ? "removed " : ""}line${many ? "s" : ""} ${many ? `${lo}-${hi}` : lo}`;
 }
 
 /** The anchored lines as diff text, with the numbers a reader would quote. @param {Anchor} anchor */

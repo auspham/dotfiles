@@ -15,7 +15,7 @@ export const SANS = "Inter";
 const CHIP = { queued: "ansi3", waiting: "working", answered: "ansi2", resolved: "muted", failed: "blocked" };
 
 /** @param {object} t theme @param {import("./comment_status.js").Chip} chip */
-const chipView = (t, chip) => div().h(20).px(8).flex().flex_none().items_center().rounded_full().text_size(11).font_medium()
+export const chipView = (t, chip) => div().h(20).px(8).flex().flex_none().items_center().rounded_full().text_size(11).font_medium()
   .bg(t[CHIP[chip.tone]] + "22").text_color(t[CHIP[chip.tone]]).child(chip.label);
 
 /** @param {object} t @param {Post} p */
