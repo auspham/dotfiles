@@ -63,10 +63,11 @@ tmux capture-pane -t "$TARGET" -p -S -200 | tail -80
 
 ## Coding & communication conventions
 
-1. **No em-dashes.** Never use the em-dash character. If a dash is needed, use a regular hyphen-minus (`-`).
-2. **Minimal comments. No banner or divider comments, ever.** Never decorate a comment with runs of dashes (or equals/stars) and never use them as section separators. This is forbidden in every language and with every prefix: `# ----------`, `// ----------`, `/* ---------- */`, `# --- section ---`, `/* ----- label ----- */`, and anything similar. If a block genuinely needs a label, write a plain short comment with no dash run (e.g. `# helpers`, never `# helpers ------`). Otherwise add a comment only when the intent is genuinely non-obvious, and let good names, small functions, and refactoring carry the rest.
-3. **Abstraction where it fits.** Use OOP and abstraction (enums, constants files, clear interfaces) where it genuinely fits; prefer pure functions when simpler. Add abstraction when a real second case exists, not for hypothetical futures. Keep code clean and extensible without over-engineering.
-4. **Quality over speed.** When weighing options, never factor in development time. Optimise for code quality and extensibility.
-5. **Markdown wrapping.** Don't insert hard line breaks mid-sentence. Write full sentences/paragraphs and break like a normal user (soft-wrap).
-6. **Commits.** Never add co-author / co-commit trailers. Always sign off (`git commit -s`) and use Conventional Commits style (e.g. `feat:`, `fix(scope):`).
-7. **Typing.** Always include strong type coverage where the language supports it (type hints, generics, avoid untyped `any`). Prefer precise types over loose ones.
+1. **Simple beats clever.** Write the obvious version first: any developer should understand it at a glance, without opening another file. Prefer plain data and direct function calls over factories, tuple tricks, type gymnastics and indirection. Code is read far more often than it is written.
+2. **Abstract only for a real second use.** Default to plain functions and data; add a helper, class or interface only when a second real case exists today. Name things for what they are. Write `new Map([[2026, createReader(table, parseRow)]])`, not a helper that returns a tuple just to feed `Map`.
+3. **Quality over speed.** Never factor in development time. Extensible means simple code that is easy to change later, not hooks built in advance.
+4. **No em-dashes.** Never use the em-dash character. If a dash is needed, use a regular hyphen-minus (`-`).
+5. **Minimal comments. No banner or divider comments, ever.** Comment only when the intent is non-obvious; let good names and small functions carry the rest. Never use runs of dashes, equals or stars as decoration or section dividers, in any language (`# ----------`, `// ----------`, `/* ----- label ----- */`). If a block needs a label, write a plain short comment such as `# helpers`.
+6. **Markdown wrapping.** Don't insert hard line breaks mid-sentence. Write full sentences and paragraphs and let them soft-wrap.
+7. **Commits.** Never add co-author trailers. Always sign off (`git commit -s`) and use Conventional Commits (`feat:`, `fix(scope):`).
+8. **Typing.** Use strong types wherever the language supports them (type hints, generics, no untyped `any`). Prefer precise, simple named types over loose or clever ones.
