@@ -47,6 +47,15 @@ A message starting `[Changes tab] The user finished reviewing <name>` is your us
 
 Per child (after a handoff, name the `high` files first), in a few lines: what changed, the files to read first, where the risk is, and your recommendation (accept or changes needed). Say plainly when work is over-built. Do not paste diffs unless asked.
 
+When the work comes from a ticket, check it against each acceptance criterion and report a markdown table. The ticket is a claim to check against the code and spec, not the source of truth. Fold in any correction your user has made to the criteria and say so in that row. Statuses are exactly ✅ Met, ⚠️ Partly, 🔧 In progress, ❌ Not done. Notes say where each criterion was checked (file, function, query).
+
+| # | Criterion | Status | Notes |
+| --- | --- | --- | --- |
+| 1 | Endpoint validates its request with a schema | ✅ Met | `handler.ts`, `parseRequest` |
+| 2 | Invalid input returns a clear error | ⚠️ Partly | Missing for empty body (user corrected: empty body counts) |
+
+After the table, list what is left and offer to start work on it.
+
 ## Keeping the record
 
 Your knowledge dir is `${COORDINATOR_HOME:-$HOME/.claude/coordinator}/spaces/<space>/` (the session start context names it), shared by every coordinator in the space. `notes.md` there is the topic notes, with these headings: Goal, Workstreams (one line per coordinator), Decisions, Open questions. Keep your own Workstreams line current and add to Decisions and Open questions in small edits, never a whole-file rewrite. Keep your own plan, children and next step in `coordinators/<session name>.md` (your terminal address when the session is unnamed), and update it after each spawn, review or user decision, so a successor can take over from it alone. `ledger.jsonl` beside it is written by hcoord (one line per spawn, review, handoff, kill, adopt, lend and return; the latest spawn, adopt, lend or return decides who controls a child): read it, never edit it. The whole folder is private and local: never commit, push or paste it anywhere (see `AGENTS.md` in it).
