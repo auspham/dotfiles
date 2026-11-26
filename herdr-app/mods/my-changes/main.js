@@ -6,6 +6,7 @@ import { coordinatorNote } from "./coordinator.js";
 import { GuideSource } from "./guide_view.js";
 import { guideBase } from "./guide.js";
 import { childBase } from "./children.js";
+import { findFork } from "./base.js";
 import { LEVELS, LEVEL_LABEL, VERDICT_SCHEMA, pathFlags, diffFlags, isTest, isCode, testsChangedCode, levelOf, splitDiff, triagePrompt } from "./triage.js";
 import { followFocus } from "./review_pane.js";
 import { isReviewPane, followedTerminal, paneLocation, paneShown, openReviewPane, publishReview, publishThreads, paneThreads, paneList, requestToggle, takeToggle, takeJump } from "./review_link.js";
@@ -37,7 +38,6 @@ const READ = ["--no-optional-locks", "-c", "core.fsmonitor=false", "-c", "diff.a
 const MAX_ROWS = 5000;
 // Below this toolbar width the Open in Zed button shortens its label, so the buttons stay on one tidy row.
 const COMPACT_BAR = 440;
-const BASES = ["origin/HEAD", "main", "master", "origin/main", "origin/master", "develop"];
 // What the diff is taken against: HEAD (work), HEAD's parent (commit), or where the branch forked (branch).
 const RANGES = ["work", "commit", "branch"];
 const asRange = (value) => (RANGES.includes(value) ? value : "work");
@@ -233,27 +233,14 @@ export default class Changes extends View {
   write(name, value) { try { localStorage.setItem(name, value); } catch { /* storage can be unavailable */ } }
   drawn(px) { return drawnPx(px, settings().zoom); }
 
-  // The branch this one forked from: the coordinator guide's fork point when it is an ancestor of HEAD, else a child's own fork point from its base label, else the first of the usual names that exists and is not HEAD itself.
-  async findBase(git, child) {
+  // The branch this one forked from: of the guide's fork point, a child's base label and the usual names, the one nearest HEAD.
+  async findBase(git, head, child) {
     const fromGuide = guideBase(this.guide.guide);
-    if (fromGuide && (await git(["merge-base", "--is-ancestor", fromGuide.rev, "HEAD"])).code === 0) { this.baseAt = 0; return (this.base = fromGuide); }
-    // A plain terminal can share a child's worktree, so the cache is per root and child base.
-    const cacheKey = `${this.root}\0${child ?? ""}`;
+    // A plain terminal can share a child's worktree, so the cache is per root, HEAD, guide and child base.
+    const cacheKey = [this.root, head, fromGuide?.rev ?? "", child ?? ""].join("\0");
     if (this.baseAt && Date.now() - this.baseAt < 30000 && this.baseRoot === cacheKey) return this.base;
-    const fork = child ? await git(["merge-base", "HEAD", child]) : null;
-    let found = fork?.code === 0 && fork.stdout.trim() ? { name: child, rev: fork.stdout.trim() } : null;
-    for (const ref of found ? [] : BASES) {
-      const ok = await git(["rev-parse", "--verify", "--quiet", `${ref}^{commit}`]);
-      if (ok.code !== 0) continue;
-      const mb = await git(["merge-base", "HEAD", ref]);
-      if (mb.code !== 0 || !mb.stdout.trim()) continue;
-      // origin/HEAD names no branch itself; show the one it points at ("master"), not "HEAD".
-      const target = ref === "origin/HEAD" ? (await git(["symbolic-ref", "--quiet", "--short", "refs/remotes/origin/HEAD"])).stdout.trim() : "";
-      found = { name: (target || ref).replace(/^origin\//, ""), rev: mb.stdout.trim() };
-      break;
-    }
-    this.base = found; this.baseAt = Date.now(); this.baseRoot = cacheKey;
-    return found;
+    this.base = await findFork(git, head, fromGuide, child); this.baseAt = Date.now(); this.baseRoot = cacheKey;
+    return this.base;
   }
 
   // HEAD's first parent, where the "Last commit" range starts; null for a root commit.
@@ -880,7 +867,7 @@ export default class Changes extends View {
           this.userRange = this.range;
           if (child) this.range = "branch";
         }
-        const base = head.code === 0 ? await this.findBase(git, child) : null;
+        const base = head.code === 0 ? await this.findBase(git, head.stdout.trim(), child) : null;
         const parent = head.code === 0 ? await this.findParent(git) : null;
         const against = this.range === "branch" && base ? base.rev : this.range === "commit" && parent ? parent.rev : "HEAD";
         this.against = against;
