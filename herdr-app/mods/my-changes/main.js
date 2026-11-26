@@ -7,7 +7,7 @@ import { GuideSource } from "./guide_view.js";
 import { guideBase } from "./guide.js";
 import { childBase } from "./children.js";
 import { findFork } from "./base.js";
-import { LEVELS, LEVEL_LABEL, VERDICT_SCHEMA, pathFlags, diffFlags, isTest, isCode, testsChangedCode, levelOf, splitDiff, triagePrompt } from "./triage.js";
+import { LEVELS, LEVEL_LABEL, VERDICT_SCHEMA, pathFlags, diffFlags, isTest, isCode, testsChangedCode, levelOf, riskGroups, splitDiff, triagePrompt } from "./triage.js";
 import { followFocus } from "./review_pane.js";
 import { isReviewPane, followedTerminal, paneLocation, paneShown, openReviewPane, publishReview, publishThreads, paneThreads, paneList, requestToggle, takeToggle, takeJump } from "./review_link.js";
 import { paneView, syncPane } from "./review_pane_view.js";
@@ -98,17 +98,19 @@ const testScript = () => `${home()}/.config/herdr-app/mods/my-changes/run-tests.
 // A run that never finished (its process was killed) stops counting as running after the script's own timeout.
 const RUN_LIMIT_MS = 16 * 60000;
 // Changed files as a folder tree: folders first, then files, by name; a folder holding only one folder
-// shares its row ("src/app"), as editors draw it. Each node: { name, path, dirs, files }.
+// shares its row ("src/app"), as editors draw it. Each node: { name, path, dirs, files, all }, where all is every file under it.
 function fileTree(files) {
-  const root = { name: "", path: "", dirs: new Map(), files: [] };
+  const root = { name: "", path: "", dirs: new Map(), files: [], all: [] };
   for (const f of files) {
     const parts = f.path.split("/");
     parts.pop();
     let node = root;
+    root.all.push(f);
     for (const part of parts) {
       const path = node.path ? `${node.path}/${part}` : part;
-      if (!node.dirs.has(part)) node.dirs.set(part, { name: part, path, dirs: new Map(), files: [] });
+      if (!node.dirs.has(part)) node.dirs.set(part, { name: part, path, dirs: new Map(), files: [], all: [] });
       node = node.dirs.get(part);
+      node.all.push(f);
     }
     node.files.push(f);
   }
@@ -622,20 +624,29 @@ export default class Changes extends View {
 
   setView(view) { this.view = view; this.write("view", view); }
 
-  flagsOf(f) { return this.flags.get(f.path)?.flags ?? pathFlags(f); }
+  flagsOf(f) { return this.risk().flags.get(f.path) ?? this.flags.get(f.path)?.flags ?? pathFlags(f); }
   verdictOf(f) { const v = this.verdicts[f.path]; return v && v.sig === this.sig(f) ? v : null; }
   guideEntry(f) { return this.range === "branch" && this.base ? this.guide.entry(f.path, this.sig(f)) : null; }
-  levelFor(f) { return levelOf(this.flagsOf(f), this.guideEntry(f) ?? this.verdictOf(f)); }
+  levelFor(f) { return this.risk().levels.get(f.path) ?? levelOf(this.flagsOf(f), this.guideEntry(f) ?? this.verdictOf(f)); }
 
-  // Files by how closely to read them; within a level, the most rule flags first, then the biggest change.
-  riskGroups() {
-    const by = { high: [], normal: [], skim: [] };
-    for (const f of this.files) by[this.levelFor(f)].push(f);
-    const weight = (f) => this.flagsOf(f).filter((x) => x.level === "high").length;
-    return LEVELS.map((level) => ({ level, files: by[level].sort((a, b) => weight(b) - weight(a) || (b.add + b.del) - (a.add + a.del) || a.path.localeCompare(b.path)) }));
+  // Every file's flags and level and the Risk view's groups, worked out once until what they depend on changes,
+  // so a render of a big diff stays cheap. Code that changes a file in place (its line count) clears riskCache.
+  risk() {
+    const inputs = [this.files, this.flags, this.verdicts, this.guide.guide, this.guide.head, this.range, this.base];
+    if (this.riskCache?.inputs.every((x, i) => x === inputs[i])) return this.riskCache;
+    const scored = this.files.map((f) => {
+      const flags = this.flags.get(f.path)?.flags ?? pathFlags(f);
+      return { f, flags, level: levelOf(flags, this.guideEntry(f) ?? this.verdictOf(f)) };
+    });
+    this.riskCache = { inputs, groups: riskGroups(scored), flags: new Map(scored.map((s) => [s.f.path, s.flags])), levels: new Map(scored.map((s) => [s.f.path, s.level])), rows: null, folds: null };
+    return this.riskCache;
   }
 
+  riskGroups() { return this.risk().groups; }
+
   riskRows() {
+    const cache = this.risk();
+    if (cache.rows && cache.folds === this.foldedDirs) return cache.rows;
     const rows = [];
     if (this.files.some((f) => isCode(f.path)) && !this.files.some((f) => isTest(f.path))) rows.push({ kind: "note", text: "No test files changed in this diff" });
     for (const g of this.riskGroups()) {
@@ -645,7 +656,15 @@ export default class Changes extends View {
       const fold = `${g.level}|`, folded = { has: (path) => this.foldedDirs.has(fold + path) };
       if (!this.foldedDirs.has(`risk:${g.level}`)) for (const row of treeRows(fileTree(g.files), folded)) rows.push({ ...row, fold });
     }
+    cache.rows = rows; cache.folds = this.foldedDirs;
     return rows;
+  }
+
+  treeRowsNow() {
+    const cache = this.treeCache;
+    if (cache?.files === this.files && cache.folds === this.foldedDirs) return cache.rows;
+    this.treeCache = { files: this.files, folds: this.foldedDirs, rows: treeRows(fileTree(this.files), this.foldedDirs) };
+    return this.treeCache.rows;
   }
 
   untriaged() { return this.files.filter((f) => !this.verdictOf(f)); }
@@ -680,14 +699,16 @@ export default class Changes extends View {
     const fresh = await this.readFresh(files, root, on);
     const subjects = new Set(files.filter((f) => isTest(f.path) && testsChangedCode(f.path, files)).map((f) => f.path));
     const stamp = (f) => `${this.sig(f)}:${f.binary ? "b" : ""}:${subjects.has(f.path) ? "t" : ""}`;
-    const todo = files.filter((f) => this.flags.get(f.path)?.stamp !== stamp(f)).slice(0, 400);
+    const todo = files.filter((f) => this.flags.get(f.path)?.stamp !== stamp(f)).slice(0, 400), flagged = new Map(this.flags);
     const needDiff = todo.filter((f) => !f.binary && pathFlags(f)[0]?.level !== "skim");
     const diffs = await this.trackedDiffs(git, needDiff, against, hasHead, 0);
     for (const f of todo) {
       const text = fresh.get(f.path) ?? diffs.get(f.path);
       const flags = [...pathFlags(f), ...(needDiff.includes(f) && text ? diffFlags(f, text, subjects.has(f.path)) : [])];
-      this.flags.set(f.path, { stamp: stamp(f), flags });
+      flagged.set(f.path, { stamp: stamp(f), flags });
     }
+    // A new map, not changed in place, so the cached risk rows see the change.
+    this.flags = flagged;
   }
 
   // Asks the model about every file it has not judged in its current state, then shows the files by risk.
@@ -752,7 +773,10 @@ export default class Changes extends View {
   }
 
   toggleDir(path, cx) {
-    if (this.foldedDirs.has(path)) this.foldedDirs.delete(path); else this.foldedDirs.add(path);
+    // A new set, not changed in place, so the cached rows see the change.
+    const folds = new Set(this.foldedDirs);
+    if (folds.has(path)) folds.delete(path); else folds.add(path);
+    this.foldedDirs = folds;
     cx.notify();
   }
 
@@ -806,7 +830,7 @@ export default class Changes extends View {
 
   // fold: the key prefix of the Risk group this folder sits in ("" in the Tree view).
   dirRow(dir, t, depth, fold = "") {
-    const inside = treeFiles(dir), done = inside.filter((f) => this.reviewed(f)).length;
+    const inside = dir.all, done = inside.filter((f) => this.reviewed(f)).length;
     const add = inside.reduce((n, f) => n + f.add, 0), del = inside.reduce((n, f) => n + f.del, 0);
     const open = !this.foldedDirs.has(fold + dir.path);
     return h_flex().id(`dir-${fold}${dir.path}`).h(26).flex_none().pl(8 + depth * 16).pr(8).gap(6).items_center().rounded(7).cursor_pointer().hover((s) => s.bg(t.hover))
@@ -932,6 +956,7 @@ export default class Changes extends View {
       else if (text.includes("\0")) lines = ["Binary file · no text diff"];
       else {
         file.add = countLines(text);
+        this.riskCache = null;
         lines = [`@@ -0,0 +1,${file.add} @@`, ...text.slice(0, 400000).replace(/\n$/, "").split("\n").slice(0, MAX_ROWS).map(l => `+${l}`)];
       }
     } else {
@@ -964,7 +989,7 @@ export default class Changes extends View {
   pick(path, cx, force = false) {
     this.sel = null; this.composer = null;
     this.open = this.open === path && !force ? null : path;
-    if (this.open) for (const dir of [...this.foldedDirs]) if (this.open.startsWith(`${dir.slice(dir.indexOf("|") + 1)}/`)) this.foldedDirs.delete(dir);
+    if (this.open) this.foldedDirs = new Set([...this.foldedDirs].filter((dir) => !this.open.startsWith(`${dir.slice(dir.indexOf("|") + 1)}/`)));
     if (this.open) { this.scrollThreads = true; this.lastPath = this.open; this.write(this.lastKey(), JSON.stringify({ path: this.open, range: this.userRange })); } this.setLines([]); this.note = null;
     this.closed = !this.open;
     publishReview(this);
@@ -1117,7 +1142,7 @@ export default class Changes extends View {
     if (key() !== this.context) this.refresh(cx);
     const t = theme(), add = this.files.reduce((n, f) => n + f.add, 0), del = this.files.reduce((n, f) => n + f.del, 0);
     const openFile = this.files.find((f) => f.path === this.open), banner = openFile ? this.whyBanner(openFile, t) : null;
-    const listRows = this.view === "tree" ? treeRows(fileTree(this.files), this.foldedDirs) : this.view === "risk" ? this.riskRows() : this.files.map((f) => ({ kind: "file", f, depth: 0 }));
+    const listRows = this.view === "tree" ? this.treeRowsNow() : this.view === "risk" ? this.riskRows() : this.files.map((f) => ({ kind: "file", f, depth: 0 }));
     const listFit = listRows.reduce((n, row) => n + this.rowHeight(row), 12);
     const untriaged = this.untriaged().length, judged = Object.keys(this.verdicts).length > 0;
     const showTriage = this.files.length > 0 && (this.triaging || untriaged > 0 || this.view !== "risk");

@@ -101,6 +101,18 @@ export function levelOf(flags, verdict) {
   return all.length ? all.reduce((a, b) => (RANK[b] > RANK[a] ? b : a)) : "normal";
 }
 
+/**
+ * The Risk view's groups: files by level; within a level the most high flags first, then the biggest change, then by path.
+ * It takes each file's flags and level already worked out, so sorting a big diff does no rule matching per comparison. Pure.
+ * @param {{ f: ChangedFile, flags: Flag[], level: Level }[]} scored @returns {{ level: Level, files: ChangedFile[] }[]}
+ */
+export function riskGroups(scored) {
+  const by = { high: [], normal: [], skim: [] };
+  for (const { f, flags, level } of scored) by[level].push({ f, weight: flags.filter((x) => x.level === "high").length, size: f.add + f.del });
+  const order = (a, b) => b.weight - a.weight || b.size - a.size || a.f.path.localeCompare(b.f.path);
+  return LEVELS.map((level) => ({ level, files: by[level].sort(order).map((x) => x.f) }));
+}
+
 /** Splits `git diff` output into one text per file (new-side path; old side for a deletion). @returns {Map<string, string>} */
 export function splitDiff(text) {
   const out = new Map();
